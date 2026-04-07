@@ -1,6 +1,7 @@
 {
     "name": "filipefernandes/laravel-turbo-excel",
     "description": "Blazing fast, memory-efficient Excel and CSV exports for Laravel powerd by OpenSpout.",
+    "version": "1.0.0",
     "keywords": [
         "laravel",
         "excel",
