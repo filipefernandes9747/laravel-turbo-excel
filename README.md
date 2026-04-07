@@ -1,8 +1,8 @@
 # Laravel Turbo Excel
 
-[![Tests](https://github.com/iberdola/turbo-excel/actions/workflows/tests.yml/badge.svg)](https://github.com/iberdola/laravel-turbo-excel/actions)
-[![PHP](https://img.shields.io/badge/PHP-8.4%2B-blue)](https://php.net)
-[![Laravel](https://img.shields.io/badge/Laravel-12%2B-red)](https://laravel.com)
+[![Tests](https://github.com/filipefernandes/laravel-turbo-excel/actions/workflows/tests.yml/badge.svg)](https://github.com/filipefernandes/laravel-turbo-excel/actions)
+[![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://php.net)
+[![Laravel](https://img.shields.io/badge/Laravel-10--12-red)](https://laravel.com)
 
 Memory-efficient Excel and CSV exports for Laravel, powered by [openspout/openspout](https://github.com/openspout/openspout).
 
