@@ -1,0 +1,10 @@
+/vendor/
+/node_modules/
+/.phpunit.cache/
+/.pest/cache/
+/.env
+composer.lock
+*.log
+*.xlsx
+*.csv
+/storage/

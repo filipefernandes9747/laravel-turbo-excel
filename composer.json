@@ -1,0 +1,57 @@
+{
+    "name": "filipefernandes/fast-excel",
+    "version": "1.0.0",
+    "description": "Memory-efficient Excel and CSV exports for Laravel, powered by openspout.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "excel", "xlsx", "csv", "export", "openspout"],
+    "authors": [
+        {
+            "name": "Filipe Fernandes",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "illuminate/support": "^12.0",
+        "illuminate/http": "^12.0",
+        "openspout/openspout": "^4.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0",
+        "orchestra/testbench": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "FastExcel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "FastExcel\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "FastExcel\\FastExcelServiceProvider"
+            ],
+            "aliases": {
+                "FastExcel": "FastExcel\\Facades\\FastExcel"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "test": "./vendor/bin/pest",
+        "test:coverage": "./vendor/bin/pest --coverage"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
