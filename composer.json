@@ -61,6 +61,6 @@
         "test": "vendor/bin/pest",
         "test:coverage": "vendor/bin/pest --coverage"
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }

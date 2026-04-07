@@ -83,7 +83,7 @@ class CollectionExport implements FromCollection
 
 class GeneratorExport implements FromGenerator, WithTitle
 {
-    public function generator(): Generator
+    public function generator(): \Generator
     {
         for ($i = 1; $i <= 500; $i++) {
             yield ['id' => $i, 'value' => 'row-' . $i];
