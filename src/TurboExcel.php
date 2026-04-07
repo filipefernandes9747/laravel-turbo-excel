@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace FastExcel;
+namespace TurboExcel;
 
-use FastExcel\Enums\Format;
+use TurboExcel\Enums\Format;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * Fast-Excel service class.
+ * Turbo-Excel service class.
  *
- * Resolved via the Facade — call through \FastExcel\Facades\FastExcel:
+ * Resolved via the Facade — call through \TurboExcel\Facades\TurboExcel:
  *
- *   FastExcel::download(new UsersExport(), 'users.xlsx');
- *   FastExcel::store(new UsersExport(), 'exports/users.xlsx', disk: 's3');
- *   FastExcel::export(new UsersExport(), '/abs/path/report.xlsx');
+ *   TurboExcel::download(new UsersExport(), 'users.xlsx');
+ *   TurboExcel::store(new UsersExport(), 'exports/users.xlsx', disk: 's3');
+ *   TurboExcel::export(new UsersExport(), '/abs/path/report.xlsx');
  */
-class FastExcel
+class TurboExcel
 {
     // ---------------------------------------------------------------------------
     // Output methods
@@ -37,7 +37,7 @@ class FastExcel
         string $disk = 'local',
         ?Format $format = null,
     ): \Illuminate\Foundation\Bus\PendingDispatch {
-        return \FastExcel\Jobs\ExportJob::dispatch($export, $filePath, $disk, $format);
+        return \TurboExcel\Jobs\ExportJob::dispatch($export, $filePath, $disk, $format);
     }
 
     /**
@@ -131,13 +131,13 @@ class FastExcel
      */
     private function writeTmp(object $export, Format $format): string
     {
-        $dir = storage_path('app/fast-excel-tmp');
+        $dir = storage_path('app/turbo-excel-tmp');
 
         if (! is_dir($dir)) {
             mkdir($dir, 0755, recursive: true);
         }
 
-        $tmp = tempnam($dir, 'fast-excel-') . '.' . $format->extension();
+        $tmp = tempnam($dir, 'turbo-excel-') . '.' . $format->extension();
 
         (new Exporter($export, $format))->export($tmp);
 

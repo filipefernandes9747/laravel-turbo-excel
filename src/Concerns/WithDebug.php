@@ -2,12 +2,9 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Concerns;
+namespace TurboExcel\Concerns;
 
 /**
- * Marker interface to enable debug logging during export.
- * Logs execution time, chunk processing, and peak memory usage to Laravel's default log channel.
+ * Marker interface to enable detailed logging of export performance.
  */
-interface WithDebug
-{
-}
+interface WithDebug {}

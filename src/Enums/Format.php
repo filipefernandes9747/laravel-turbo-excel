@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Enums;
+namespace TurboExcel\Enums;
 
 enum Format: string
 {

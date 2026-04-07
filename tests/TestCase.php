@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Tests;
+namespace TurboExcel\Tests;
 
-use FastExcel\FastExcelServiceProvider;
+use TurboExcel\TurboExcelServiceProvider;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 
 abstract class TestCase extends OrchestraTestCase
 {
     protected function getPackageProviders($app): array
     {
-        return [FastExcelServiceProvider::class];
+        return [TurboExcelServiceProvider::class];
     }
 
     protected function getPackageAliases($app): array
     {
         return [
-            'FastExcel' => \FastExcel\Facades\FastExcel::class,
+            'TurboExcel' => \TurboExcel\Facades\TurboExcel::class,
         ];
     }
 
@@ -31,6 +31,6 @@ abstract class TestCase extends OrchestraTestCase
      */
     protected function tmpPath(string $extension = 'xlsx'): string
     {
-        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('fast-excel-test-', true) . '.' . $extension;
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('turbo-excel-test-', true) . '.' . $extension;
     }
 }

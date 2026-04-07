@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Concerns;
+namespace TurboExcel\Concerns;
 
 use OpenSpout\Common\Entity\Style\Style;
 

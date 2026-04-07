@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use FastExcel\Concerns\FromArray;
-use FastExcel\Concerns\WithColumnFormatting;
-use FastExcel\Concerns\WithCsvOptions;
-use FastExcel\Concerns\WithHeadings;
-use FastExcel\Concerns\WithStyles;
-use FastExcel\Enums\Format;
-use FastExcel\Facades\FastExcel;
+use TurboExcel\Concerns\FromArray;
+use TurboExcel\Concerns\WithColumnFormatting;
+use TurboExcel\Concerns\WithCsvOptions;
+use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithStyles;
+use TurboExcel\Enums\Format;
+use TurboExcel\Facades\TurboExcel;
 use OpenSpout\Common\Entity\Style\Style;
 use Illuminate\Support\Facades\File;
 
@@ -38,7 +38,7 @@ describe('Export Options', function (): void {
         };
 
         $path = tmpPath('csv');
-        FastExcel::export($export, $path, Format::CSV);
+        TurboExcel::export($export, $path, Format::CSV);
 
         $content = File::get($path);
         
@@ -81,7 +81,7 @@ describe('Export Options', function (): void {
         };
 
         $path = tmpPath('xlsx');
-        FastExcel::export($export, $path, Format::XLSX);
+        TurboExcel::export($export, $path, Format::XLSX);
 
         expect(File::exists($path))->toBeTrue()
             ->and(File::size($path))->toBeGreaterThan(0);
@@ -95,13 +95,13 @@ describe('Export Options', function (): void {
             ->twice()
             ->andReturnNull();
 
-        $export = new class implements FromArray, \FastExcel\Concerns\WithDebug {
+        $export = new class implements FromArray, \TurboExcel\Concerns\WithDebug {
             public function array(): array
             {
                 return [['data' => 'yes']];
             }
         };
 
-        FastExcel::export($export, tmpPath('debug.xlsx'), Format::XLSX);
+        TurboExcel::export($export, tmpPath('debug.xlsx'), Format::XLSX);
     });
 });

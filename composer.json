@@ -1,44 +1,53 @@
 {
-    "name": "filipefernandes/fast-excel",
-    "version": "1.0.0",
-    "description": "Memory-efficient Excel and CSV exports for Laravel, powered by openspout.",
-    "type": "library",
+    "name": "filipefernandes/laravel-turbo-excel",
+    "description": "Blazing fast, memory-efficient Excel and CSV exports for Laravel powerd by OpenSpout.",
+    "keywords": [
+        "laravel",
+        "excel",
+        "xlsx",
+        "csv",
+        "export",
+        "openspout",
+        "fast",
+        "stream"
+    ],
     "license": "MIT",
-    "keywords": ["laravel", "excel", "xlsx", "csv", "export", "openspout"],
     "authors": [
         {
             "name": "Filipe Fernandes",
-            "role": "Developer"
+            "email": "filipe9747@gmail.com"
         }
     ],
     "require": {
-        "php": "^8.4",
-        "illuminate/support": "^12.0",
-        "illuminate/http": "^12.0",
-        "openspout/openspout": "^4.0"
+        "php": "^8.2",
+        "illuminate/support": "^10.0|^11.0",
+        "illuminate/database": "^10.0|^11.0",
+        "illuminate/bus": "^10.0|^11.0",
+        "illuminate/queue": "^10.0|^11.0",
+        "openspout/openspout": "^4.23"
     },
     "require-dev": {
-        "pestphp/pest": "^3.0",
-        "pestphp/pest-plugin-laravel": "^3.0",
-        "orchestra/testbench": "^10.0"
+        "orchestra/testbench": "^8.0|^9.0",
+        "pestphp/pest": "^2.0|^3.0",
+        "pestphp/pest-plugin-laravel": "^2.0|^3.0"
     },
     "autoload": {
         "psr-4": {
-            "FastExcel\\": "src/"
+            "TurboExcel\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "FastExcel\\Tests\\": "tests/"
+            "TurboExcel\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "FastExcel\\FastExcelServiceProvider"
+                "TurboExcel\\TurboExcelServiceProvider"
             ],
             "aliases": {
-                "FastExcel": "FastExcel\\Facades\\FastExcel"
+                "TurboExcel": "TurboExcel\\Facades\\TurboExcel"
             }
         }
     },
@@ -49,9 +58,9 @@
         }
     },
     "scripts": {
-        "test": "./vendor/bin/pest",
-        "test:coverage": "./vendor/bin/pest --coverage"
+        "test": "vendor/bin/pest",
+        "test:coverage": "vendor/bin/pest --coverage"
     },
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true
 }

@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace FastExcel;
+namespace TurboExcel;
 
 use Illuminate\Support\ServiceProvider;
 
-class FastExcelServiceProvider extends ServiceProvider
+class TurboExcelServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
         // Bind as a singleton so the Facade always resolves the same instance.
-        $this->app->singleton(FastExcel::class, fn () => new FastExcel());
+        $this->app->singleton(TurboExcel::class, fn () => new TurboExcel());
     }
 
     public function boot(): void

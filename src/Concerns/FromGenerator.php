@@ -2,17 +2,14 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Concerns;
+namespace TurboExcel\Concerns;
+
+use Generator;
 
 interface FromGenerator
 {
     /**
-     * Return a PHP Generator that yields one row at a time.
-     *
-     * Ideal for custom lazy data sources (e.g. reading a CSV, external API pages).
-     * Memory usage is bounded to a single row at any given time.
-     *
-     * @return \Generator<int, mixed>
+     * @return Generator<int, array<string, mixed>>
      */
-    public function generator(): \Generator;
+    public function generator(): Generator;
 }

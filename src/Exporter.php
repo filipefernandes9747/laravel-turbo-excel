@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace FastExcel;
+namespace TurboExcel;
 
-use FastExcel\Concerns\FromArray;
-use FastExcel\Concerns\FromCollection;
-use FastExcel\Concerns\FromGenerator;
-use FastExcel\Concerns\FromQuery;
-use FastExcel\Concerns\WithChunkSize;
-use FastExcel\Concerns\WithColumnFormatting;
-use FastExcel\Concerns\WithHeadings;
-use FastExcel\Concerns\WithMapping;
-use FastExcel\Concerns\WithMultipleSheets;
-use FastExcel\Concerns\WithStyles;
-use FastExcel\Concerns\WithTitle;
-use FastExcel\Enums\Format;
-use FastExcel\Exceptions\FastExcelException;
-use FastExcel\Writers\Contracts\WriterInterface;
-use FastExcel\Writers\CsvWriter;
-use FastExcel\Writers\XlsxWriter;
+use TurboExcel\Concerns\FromArray;
+use TurboExcel\Concerns\FromCollection;
+use TurboExcel\Concerns\FromGenerator;
+use TurboExcel\Concerns\FromQuery;
+use TurboExcel\Concerns\WithChunkSize;
+use TurboExcel\Concerns\WithColumnFormatting;
+use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithMapping;
+use TurboExcel\Concerns\WithMultipleSheets;
+use TurboExcel\Concerns\WithStyles;
+use TurboExcel\Concerns\WithTitle;
+use TurboExcel\Enums\Format;
+use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Writers\Contracts\WriterInterface;
+use TurboExcel\Writers\CsvWriter;
+use TurboExcel\Writers\XlsxWriter;
 use Illuminate\Database\Eloquent\Model;
 use OpenSpout\Common\Entity\Style\Style;
 
@@ -50,11 +50,11 @@ final class Exporter
 
     public function export(string $path): void
     {
-        $isDebug = $this->export instanceof \FastExcel\Concerns\WithDebug;
+        $isDebug = $this->export instanceof \TurboExcel\Concerns\WithDebug;
         $startTime = microtime(true);
 
         if ($isDebug) {
-            \Illuminate\Support\Facades\Log::info('FastExcel: Starting export', [
+            \Illuminate\Support\Facades\Log::info('TurboExcel: Starting export', [
                 'format' => $this->format->value,
                 'path'   => $path,
                 'class'  => $this->export::class,
@@ -75,7 +75,7 @@ final class Exporter
         $writer->close();
 
         if ($isDebug) {
-            \Illuminate\Support\Facades\Log::info('FastExcel: Export completed', [
+            \Illuminate\Support\Facades\Log::info('TurboExcel: Export completed', [
                 'total_rows'     => $totalRows,
                 'execution_time' => round(microtime(true) - $startTime, 2) . 's',
                 'peak_memory'    => round(memory_get_peak_usage() / 1024 / 1024, 2) . 'MB',
@@ -93,7 +93,7 @@ final class Exporter
     private function writeMultipleSheets(array $sheets, WriterInterface $writer, bool $isDebug): int
     {
         if ($this->format === Format::CSV) {
-            throw new FastExcelException(
+            throw new TurboExcelException(
                 'CSV does not support multiple sheets. Use Format::XLSX for multi-sheet exports.',
             );
         }
@@ -147,7 +147,7 @@ final class Exporter
             $rowsWritten++;
             
             if ($isDebug && $rowsWritten % 5000 === 0) {
-                \Illuminate\Support\Facades\Log::debug("FastExcel: Processed {$rowsWritten} rows on sheet '{$title}'", [
+                \Illuminate\Support\Facades\Log::debug("TurboExcel: Processed {$rowsWritten} rows on sheet '{$title}'", [
                     'peak_memory' => round(memory_get_peak_usage() / 1024 / 1024, 2) . 'MB',
                 ]);
             }
@@ -169,7 +169,7 @@ final class Exporter
      *
      * @return iterable<mixed>
      *
-     * @throws FastExcelException When no data-source concern is implemented.
+     * @throws TurboExcelException When no data-source concern is implemented.
      */
     private function resolveRows(object $export, int $chunkSize): iterable
     {
@@ -178,7 +178,7 @@ final class Exporter
             $export instanceof FromCollection => $export->collection(),
             $export instanceof FromArray      => $export->array(),
             $export instanceof FromGenerator  => $export->generator(),
-            default => throw new FastExcelException(
+            default => throw new TurboExcelException(
                 sprintf(
                     'Export class [%s] must implement one of: FromQuery, FromCollection, FromArray, or FromGenerator.',
                     $export::class,

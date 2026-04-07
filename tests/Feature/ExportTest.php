@@ -2,17 +2,18 @@
 
 declare(strict_types=1);
 
-use FastExcel\Concerns\FromArray;
-use FastExcel\Concerns\FromCollection;
-use FastExcel\Concerns\FromGenerator;
-use FastExcel\Concerns\WithChunkSize;
-use FastExcel\Concerns\WithHeadings;
-use FastExcel\Concerns\WithMapping;
-use FastExcel\Concerns\WithMultipleSheets;
-use FastExcel\Concerns\WithTitle;
-use FastExcel\Enums\Format;
-use FastExcel\Exceptions\FastExcelException;
-use FastExcel\FastExcel;
+use TurboExcel\Concerns\FromArray;
+use TurboExcel\Concerns\FromCollection;
+use TurboExcel\Concerns\FromGenerator;
+use TurboExcel\Concerns\WithChunkSize;
+use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithMapping;
+use TurboExcel\Concerns\WithMultipleSheets;
+use TurboExcel\Concerns\WithStyles;
+use TurboExcel\Concerns\WithTitle;
+use TurboExcel\Enums\Format;
+use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\TurboExcel;
 use Illuminate\Support\Collection;
 use OpenSpout\Reader\CSV\Reader as CsvReader;
 use OpenSpout\Reader\XLSX\Reader as XlsxReader;
@@ -219,8 +220,8 @@ describe('Format enum', function (): void {
     });
 
     it('creates temporary directories if missing', function (): void {
-        if (is_dir(storage_path('app/fast-excel-tmp'))) {
-            \Illuminate\Support\Facades\File::deleteDirectory(storage_path('app/fast-excel-tmp'));
+        if (is_dir(storage_path('app/turbo-excel-tmp'))) {
+            \Illuminate\Support\Facades\File::deleteDirectory(storage_path('app/turbo-excel-tmp'));
         }
 
         $export = new class implements FromArray {
@@ -228,14 +229,14 @@ describe('Format enum', function (): void {
         };
 
         // this triggers `writeTmp()->mkdir`
-        $response = \FastExcel\Facades\FastExcel::download($export, 'test.csv', Format::CSV);
+        $response = \TurboExcel\Facades\TurboExcel::download($export, 'test.csv', Format::CSV);
         
         ob_start();
         $response->sendContent();
         ob_end_clean();
         
         expect($response)->toBeInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class);
-        expect(is_dir(storage_path('app/fast-excel-tmp')))->toBeTrue();
+        expect(is_dir(storage_path('app/turbo-excel-tmp')))->toBeTrue();
     });
 });
 
@@ -247,7 +248,7 @@ describe('FromArray', function (): void {
     it('exports with auto-derived headings', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new SimpleArrayExport(), $path);
+        app(TurboExcel::class)->export(new SimpleArrayExport(), $path);
 
         $rows = readXlsx($path);
 
@@ -263,7 +264,7 @@ describe('FromArray', function (): void {
     it('exports with explicit WithHeadings', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new ExplicitHeadingsExport(), $path);
+        app(TurboExcel::class)->export(new ExplicitHeadingsExport(), $path);
 
         $rows = readXlsx($path);
 
@@ -276,7 +277,7 @@ describe('FromArray', function (): void {
     it('applies WithMapping and WithHeadings', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new MappedExport(), $path);
+        app(TurboExcel::class)->export(new MappedExport(), $path);
 
         $rows = readXlsx($path);
 
@@ -296,7 +297,7 @@ describe('FromCollection', function (): void {
     it('exports an Illuminate Collection', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new CollectionExport(), $path);
+        app(TurboExcel::class)->export(new CollectionExport(), $path);
 
         $rows = readXlsx($path);
 
@@ -316,7 +317,7 @@ describe('FromGenerator', function (): void {
     it('streams 500 rows without loading all into memory', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new GeneratorExport(), $path);
+        app(TurboExcel::class)->export(new GeneratorExport(), $path);
 
         $rows = readXlsx($path);
 
@@ -330,7 +331,7 @@ describe('FromGenerator', function (): void {
     it('respects WithTitle on xlsx export', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new GeneratorExport(), $path);
+        app(TurboExcel::class)->export(new GeneratorExport(), $path);
 
         $sheets = readXlsxSheets($path);
 
@@ -348,7 +349,7 @@ describe('WithMultipleSheets', function (): void {
     it('writes multiple sheets with correct names and data', function (): void {
         $path = tmpPath('xlsx');
 
-        app(FastExcel::class)->export(new MultiSheetExport(), $path);
+        app(TurboExcel::class)->export(new MultiSheetExport(), $path);
 
         $sheets = readXlsxSheets($path);
 
@@ -366,8 +367,8 @@ describe('WithMultipleSheets', function (): void {
     it('throws when multi-sheet export is used with CSV', function (): void {
         $path = tmpPath('csv');
 
-        expect(fn () => app(FastExcel::class)->export(new MultiSheetExport(), $path))
-            ->toThrow(FastExcelException::class, 'CSV does not support multiple sheets');
+        expect(fn () => app(TurboExcel::class)->export(new MultiSheetExport(), $path))
+            ->toThrow(TurboExcelException::class, 'CSV does not support multiple sheets');
     });
 });
 
@@ -379,7 +380,7 @@ describe('CSV export', function (): void {
     it('exports FromArray to CSV', function (): void {
         $path = tmpPath('csv');
 
-        app(FastExcel::class)->export(new SimpleArrayExport(), $path);
+        app(TurboExcel::class)->export(new SimpleArrayExport(), $path);
 
         $rows = readCsv($path);
 
@@ -398,8 +399,8 @@ describe('Error handling', function (): void {
     it('throws when no data-source concern is implemented', function (): void {
         $path = tmpPath('xlsx');
 
-        expect(fn () => app(FastExcel::class)->export(new NoSourceExport(), $path))
-            ->toThrow(FastExcelException::class, 'FromQuery, FromCollection, FromArray, or FromGenerator');
+        expect(fn () => app(TurboExcel::class)->export(new NoSourceExport(), $path))
+            ->toThrow(TurboExcelException::class, 'FromQuery, FromCollection, FromArray, or FromGenerator');
     });
 });
 
@@ -409,7 +410,7 @@ describe('Error handling', function (): void {
 
 describe('download() response', function (): void {
     it('returns correct Content-Type for xlsx and executes streaming callback', function (): void {
-        $response = app(FastExcel::class)->download(new SimpleArrayExport(), 'users.xlsx');
+        $response = app(TurboExcel::class)->download(new SimpleArrayExport(), 'users.xlsx');
 
         expect($response->headers->get('Content-Type'))
             ->toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -425,7 +426,7 @@ describe('download() response', function (): void {
     });
 
     it('returns correct Content-Type for csv', function (): void {
-        $response = app(FastExcel::class)->download(new SimpleArrayExport(), 'users.csv');
+        $response = app(TurboExcel::class)->download(new SimpleArrayExport(), 'users.csv');
 
         expect($response->headers->get('Content-Type'))
             ->toContain('text/csv')
@@ -447,7 +448,7 @@ describe('WithChunkSize', function (): void {
 
         // Just verify no exception is thrown and it exports successfully.
         $path = tmpPath('xlsx');
-        app(FastExcel::class)->export($export, $path);
+        app(TurboExcel::class)->export($export, $path);
         expect(file_exists($path))->toBeTrue();
         unlink($path);
     });
@@ -472,7 +473,7 @@ describe('Row normalisation', function (): void {
         };
 
         $path = tmpPath('xlsx');
-        app(FastExcel::class)->export($export, $path);
+        app(TurboExcel::class)->export($export, $path);
         
         $rows = readXlsx($path);
         expect($rows[1])->toBe(['serialised']);
@@ -490,7 +491,7 @@ describe('Row normalisation', function (): void {
         };
 
         $path = tmpPath('xlsx');
-        app(FastExcel::class)->export($export, $path);
+        app(TurboExcel::class)->export($export, $path);
         
         $rows = readXlsx($path);
         expect($rows[1])->toBe(['object']);
@@ -506,7 +507,7 @@ describe('Row normalisation', function (): void {
         };
 
         $path = tmpPath('xlsx');
-        app(FastExcel::class)->export($export, $path);
+        app(TurboExcel::class)->export($export, $path);
         
         $rows = readXlsx($path);
         expect($rows[1])->toBe(['scalar']);
@@ -523,7 +524,7 @@ describe('Output methods coverage', function (): void {
     it('can store() to a disk', function (): void {
         \Illuminate\Support\Facades\Storage::fake('local');
 
-        $path = app(FastExcel::class)->store(new SimpleArrayExport(), 'stored.xlsx');
+        $path = app(TurboExcel::class)->store(new SimpleArrayExport(), 'stored.xlsx');
 
         expect($path)->toBe('stored.xlsx');
         \Illuminate\Support\Facades\Storage::disk('local')->assertExists('stored.xlsx');
@@ -531,7 +532,7 @@ describe('Output methods coverage', function (): void {
 
     it('can export() directly to filesystem', function (): void {
         $path = tmpPath('xlsx');
-        $returnedPath = app(FastExcel::class)->export(new SimpleArrayExport(), $path);
+        $returnedPath = app(TurboExcel::class)->export(new SimpleArrayExport(), $path);
 
         expect($returnedPath)->toBe($path)
             ->and(file_exists($path))->toBeTrue();
@@ -541,17 +542,17 @@ describe('Output methods coverage', function (): void {
     
     it('can use Facade properly', function (): void {
         $path = tmpPath('xlsx');
-        \FastExcel\Facades\FastExcel::export(new SimpleArrayExport(), $path);
+        \TurboExcel\Facades\TurboExcel::export(new SimpleArrayExport(), $path);
         expect(file_exists($path))->toBeTrue();
         unlink($path);
     });
 
     it('can stream() directly to output without touching disk', function (): void {
-        $export = new class implements \FastExcel\Concerns\FromArray {
+        $export = new class implements \TurboExcel\Concerns\FromArray {
             public function array(): array { return [['key' => 'direct-stream']]; }
         };
 
-        $response = \FastExcel\Facades\FastExcel::stream($export, 'stream.csv', \FastExcel\Enums\Format::CSV);
+        $response = \TurboExcel\Facades\TurboExcel::stream($export, 'stream.csv', \TurboExcel\Enums\Format::CSV);
 
         ob_start();
         $response->sendContent();
@@ -568,9 +569,9 @@ describe('Output methods coverage', function (): void {
 
 describe('Deprecations and edge cases', function (): void {
     it('throws on subsequent addSheet on CSV Writer', function (): void {
-        $writer = new \FastExcel\Writers\CsvWriter();
+        $writer = new \TurboExcel\Writers\CsvWriter();
         
         expect(fn () => $writer->addSheet('Not actually used', false))
-            ->toThrow(\FastExcel\Exceptions\FastExcelException::class);
+            ->toThrow(\TurboExcel\Exceptions\TurboExcelException::class);
     });
 });

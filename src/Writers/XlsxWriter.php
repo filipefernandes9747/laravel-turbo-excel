@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Writers;
+namespace TurboExcel\Writers;
 
-use FastExcel\Writers\Contracts\WriterInterface;
+use TurboExcel\Writers\Contracts\WriterInterface;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\XLSX\Writer;
 

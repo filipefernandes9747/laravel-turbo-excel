@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Writers\Contracts;
+namespace TurboExcel\Writers\Contracts;
 
 interface WriterInterface
 {

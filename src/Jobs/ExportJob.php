@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Jobs;
+namespace TurboExcel\Jobs;
 
-use FastExcel\Enums\Format;
-use FastExcel\FastExcel;
+use TurboExcel\Enums\Format;
+use TurboExcel\TurboExcel;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -36,16 +36,13 @@ class ExportJob implements ShouldQueue
             return;
         }
 
-        // We use the FastExcel service just to get the temporary path and format logic.
-        $fastExcel = app(FastExcel::class);
+        // We use the TurboExcel service just to get the temporary path and format logic.
+        $turboExcel = app(TurboExcel::class);
         $format = $this->format ?? Format::fromFilename($this->filePath);
         $tmpPath = $this->getTempPath($format->extension());
 
         try {
-            $totalRows = $this->calculateTotalRows();
-            $processedCount = 0;
-
-            $exporter = new \FastExcel\Exporter($this->export, $format);
+            $exporter = new \TurboExcel\Exporter($this->export, $format);
             
             // We can add a custom progress callback if we implement standard Events later,
             // but Laravel Batch does not natively support intra-job progress updating.
@@ -77,29 +74,18 @@ class ExportJob implements ShouldQueue
 
     private function getTempPath(string $extension): string
     {
-        $dir = storage_path('app/fast-excel-tmp');
+        $dir = storage_path('app/turbo-excel-tmp');
 
         if (! is_dir($dir)) {
             mkdir($dir, 0755, recursive: true);
         }
 
-        return $dir . DIRECTORY_SEPARATOR . uniqid('fast-excel-job-', true) . '.' . $extension;
+        return $dir . DIRECTORY_SEPARATOR . uniqid('turbo-excel-job-', true) . '.' . $extension;
     }
 
-    private function calculateTotalRows(): int
+    // Helper for testing or future use
+    public function setBatch($batch)
     {
-        if ($this->export instanceof \FastExcel\Concerns\FromQuery) {
-            return $this->export->query()->count();
-        }
-
-        if ($this->export instanceof \FastExcel\Concerns\FromCollection) {
-            return $this->export->collection()->count();
-        }
-
-        if ($this->export instanceof \FastExcel\Concerns\FromArray) {
-            return count($this->export->array());
-        }
-
-        return 0; // Generators typically cannot be counted efficiently beforehand
+        $this->batchId = $batch->id;
     }
 }

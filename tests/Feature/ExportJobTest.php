@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use FastExcel\Enums\Format;
-use FastExcel\Facades\FastExcel;
-use FastExcel\Jobs\ExportJob;
+use TurboExcel\Enums\Format;
+use TurboExcel\Facades\TurboExcel;
+use TurboExcel\Jobs\ExportJob;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
@@ -12,11 +12,11 @@ describe('Queued Exports', function (): void {
     it('dispatches the export job through the facade', function (): void {
         Queue::fake();
 
-        $export = new class implements \FastExcel\Concerns\FromArray {
+        $export = new class implements \TurboExcel\Concerns\FromArray {
             public function array(): array { return [['data' => 1]]; }
         };
 
-        FastExcel::queue($export, 'exports/data.xlsx', 's3', Format::XLSX);
+        TurboExcel::queue($export, 'exports/data.xlsx', 's3', Format::XLSX);
 
         Queue::assertPushed(ExportJob::class, function (ExportJob $job) {
             return $job->filePath === 'exports/data.xlsx'
@@ -28,11 +28,11 @@ describe('Queued Exports', function (): void {
     it('handles the export and stores it to the selected disk', function (): void {
         Storage::fake('s3');
         // Delete tmp dir to hit the mkdir branch
-        if (is_dir(storage_path('app/fast-excel-tmp'))) {
-            \Illuminate\Support\Facades\File::deleteDirectory(storage_path('app/fast-excel-tmp'));
+        if (is_dir(storage_path('app/turbo-excel-tmp'))) {
+            \Illuminate\Support\Facades\File::deleteDirectory(storage_path('app/turbo-excel-tmp'));
         }
 
-        $export = new class implements \FastExcel\Concerns\FromArray {
+        $export = new class implements \TurboExcel\Concerns\FromArray {
             public function array(): array { return [['key' => 'value']]; }
         };
 
@@ -45,12 +45,13 @@ describe('Queued Exports', function (): void {
     });
 
     it('cancels gracefully if batch is cancelled', function (): void {
-        $export = new class implements \FastExcel\Concerns\FromArray {
+        $export = new class implements \TurboExcel\Concerns\FromArray {
             public function array(): array { return []; }
         };
 
         $batch = Mockery::mock(\Illuminate\Bus\Batch::class);
         $batch->shouldReceive('cancelled')->andReturn(true);
+        $batch->id = 'fake-id';
         
         $repo = Mockery::mock(\Illuminate\Bus\BatchRepository::class);
         $repo->shouldReceive('find')->with('fake-id')->andReturn($batch);
@@ -69,14 +70,14 @@ describe('Queued Exports', function (): void {
 
     it('calculates total rows from Collections and Generators', function (): void {
         Storage::fake('local');
-        $exportCollection = new class implements \FastExcel\Concerns\FromCollection {
+        $exportCollection = new class implements \TurboExcel\Concerns\FromCollection {
             public function collection(): \Illuminate\Support\Collection { return collect([['a' => 1]]); }
         };
         $jobC = new ExportJob($exportCollection, 'col.csv', 'local', Format::CSV);
         $jobC->handle();
         expect(Storage::disk('local')->exists('col.csv'))->toBeTrue();
 
-        $exportGenerator = new class implements \FastExcel\Concerns\FromGenerator {
+        $exportGenerator = new class implements \TurboExcel\Concerns\FromGenerator {
             public function generator(): \Generator { yield ['a' => 1]; }
         };
         $jobG = new ExportJob($exportGenerator, 'gen.csv', 'local', Format::CSV);

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Writers;
+namespace TurboExcel\Writers;
 
-use FastExcel\Exceptions\FastExcelException;
-use FastExcel\Writers\Contracts\WriterInterface;
+use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Writers\Contracts\WriterInterface;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\CSV\Writer;
 use OpenSpout\Writer\CSV\Options;
@@ -23,7 +23,7 @@ final class CsvWriter implements WriterInterface
 
     public function applyOptions(object $export): void
     {
-        if ($export instanceof \FastExcel\Concerns\WithCsvOptions) {
+        if ($export instanceof \TurboExcel\Concerns\WithCsvOptions) {
             $this->options = new Options();
             $this->options->FIELD_DELIMITER = $export->delimiter();
             $this->options->FIELD_ENCLOSURE = $export->enclosure();
@@ -34,12 +34,12 @@ final class CsvWriter implements WriterInterface
     /**
      * CSV does not support multiple sheets.
      *
-     * @throws FastExcelException
+     * @throws TurboExcelException
      */
     public function addSheet(string $name, bool $first = false): void
     {
         if (! $first) {
-            throw new FastExcelException(
+            throw new TurboExcelException(
                 'CSV format does not support multiple sheets. Use Format::XLSX for multi-sheet exports.',
             );
         }

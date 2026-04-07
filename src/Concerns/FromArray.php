@@ -2,15 +2,12 @@
 
 declare(strict_types=1);
 
-namespace FastExcel\Concerns;
+namespace TurboExcel\Concerns;
 
 interface FromArray
 {
     /**
-     * Return the raw data as a plain PHP array.
-     * Each element must be an array or object that can be normalised to a row.
-     *
-     * @return array<int, mixed>
+     * @return array<array-key, mixed>
      */
     public function array(): array;
 }
