@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace TurboExcel\Concerns;
 
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Query\Builder;
 
 interface FromQuery
 {
-    public function query(): Builder|QueryBuilder;
+    /**
+     * @return Builder|EloquentBuilder|Relation
+     */
+    public function query();
 }
