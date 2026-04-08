@@ -568,12 +568,11 @@ describe('Output methods coverage', function (): void {
 // ---------------------------------------------------------------------------
 
 describe('Concern: WithAnonymization', function (): void {
-    it('anonymizes specified columns', function (): void {
+    it('anonymizes specified columns by default', function (): void {
         $export = new class implements FromArray, \TurboExcel\Concerns\WithAnonymization {
             public function array(): array {
                 return [
                     ['name' => 'John Doe', 'email' => 'john@example.com', 'id' => 1],
-                    ['name' => 'Jane Smith', 'email' => 'jane@example.com', 'id' => 2],
                 ];
             }
 
@@ -591,11 +590,41 @@ describe('Concern: WithAnonymization', function (): void {
 
         $data = readXlsx($path);
         
-        expect($data[0]['name'])->toBe('[HIDDEN]')
-            ->and($data[0]['email'])->toBe('[HIDDEN]')
-            ->and($data[0]['id'])->toBe(1)
-            ->and($data[1]['name'])->toBe('[HIDDEN]')
-            ->and($data[1]['email'])->toBe('[HIDDEN]')
-            ->and($data[1]['id'])->toBe(2);
+        expect($data[1][0])->toBe('[HIDDEN]')
+            ->and($data[1][1])->toBe('[HIDDEN]');
+
+        unlink($path);
+    });
+
+    it('can explicitly disable anonymization via method', function (): void {
+        $export = new class implements FromArray, \TurboExcel\Concerns\WithAnonymization {
+            public function array(): array {
+                return [
+                    ['name' => 'John Doe', 'email' => 'john@example.com', 'id' => 1],
+                ];
+            }
+
+            public function isAnonymizationEnabled(): bool {
+                return false;
+            }
+
+            public function anonymizeColumns(): array {
+                return ['name', 'email'];
+            }
+
+            public function anonymizeReplacement(): string {
+                return '[HIDDEN]';
+            }
+        };
+
+        $path = tmpPath('xlsx');
+        \TurboExcel\Facades\TurboExcel::export($export, $path);
+
+        $data = readXlsx($path);
+        
+        expect($data[1][0])->toBe('John Doe')
+            ->and($data[1][1])->toBe('john@example.com');
+
+        unlink($path);
     });
 });

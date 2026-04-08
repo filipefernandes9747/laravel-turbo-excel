@@ -126,7 +126,8 @@ final class Exporter
         $headerStyle  = $columnStyles['header'] ?? null;
 
         // --- Anonymization ---
-        $anonymizeColumns     = $export instanceof WithAnonymization ? $export->anonymizeColumns() : [];
+        $shouldAnonymize      = $export instanceof WithAnonymization && (!method_exists($export, 'isAnonymizationEnabled') || $export->isAnonymizationEnabled());
+        $anonymizeColumns     = $shouldAnonymize ? $export->anonymizeColumns() : [];
         $anonymizeReplacement = $export instanceof WithAnonymization ? $export->anonymizeReplacement() : '';
 
         // --- Stream rows ---

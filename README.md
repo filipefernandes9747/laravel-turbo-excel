@@ -212,6 +212,12 @@ class UsersExport implements FromQuery, WithAnonymization
 {
     public function query() { ... }
 
+    // Optional: Determine if anonymization should run (defaults to true)
+    public function isAnonymizationEnabled(): bool
+    {
+        return $this->user->isAdmin() === false;
+    }
+
     // Column keys to mask (mapped or raw keys)
     public function anonymizeColumns(): array
     {
