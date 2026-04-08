@@ -193,6 +193,19 @@ final class Exporter
             }
         }
 
+        // If no rows were written at all, ensure at least one sheet exists
+        // (renaming the default one) and write headings if available.
+        if ($rowsWritten === 0) {
+            $title = $export instanceof WithTitle ? $export->title() : 'Sheet 1';
+            $writer->addSheet($title, true);
+            
+            if ($export instanceof WithHeadings) {
+                $columnStyles = $this->resolveColumnStyles($export);
+                $headerStyle  = $columnStyles['header'] ?? null;
+                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($export->headings(), $headerStyle));
+            }
+        }
+
         return $rowsWritten;
     }
 
@@ -223,6 +236,13 @@ final class Exporter
         $headingsWritten = false;
         $rowsWritten = 0;
 
+        // If headings are explicitly provided, write them now so empty exports
+        // still produce a valid Excel file with at least a header row.
+        if ($export instanceof WithHeadings) {
+            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($export->headings(), $headerStyle));
+            $headingsWritten = true;
+        }
+
         foreach ($this->resolveRows($export, $chunkSize) as $rawRow) {
             $row = $export instanceof WithMapping
                 ? $export->map($rawRow)
@@ -237,6 +257,7 @@ final class Exporter
             }
 
             // Write the heading row once, before the first data row.
+            // (Only if not already written above)
             if (! $headingsWritten) {
                 $headings = $export instanceof WithHeadings
                     ? $export->headings()
