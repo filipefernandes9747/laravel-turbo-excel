@@ -203,6 +203,9 @@ final class Exporter
                 $columnStyles = $this->resolveColumnStyles($export);
                 $headerStyle  = $columnStyles['header'] ?? null;
                 $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($export->headings(), $headerStyle));
+            } else {
+                // Ensure at least one row exists to avoid Excel corruption.
+                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues([' ']));
             }
         }
 
@@ -279,6 +282,11 @@ final class Exporter
             if ($this->onProgress) {
                 ($this->onProgress)();
             }
+        }
+
+        if (! $headingsWritten && $rowsWritten === 0) {
+            // Ensure at least one row exists to avoid Excel corruption.
+            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues([' ']));
         }
 
         return $rowsWritten;

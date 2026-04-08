@@ -119,8 +119,8 @@ describe('Empty Export Handling', function (): void {
         $rows = getXlsxRows($path);
 
         // Without headings and without data, we can't derive anything.
-        // It should still be a valid file (possibly 0 rows).
-        expect($rows)->toHaveCount(0);
+        // It should still be a valid file with at least one empty safeguard row to avoid Excel corruption.
+        expect($rows)->toHaveCount(1);
 
         unlink($path);
     });
