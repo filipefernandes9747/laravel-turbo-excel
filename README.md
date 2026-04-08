@@ -239,18 +239,54 @@ class UsersExport implements FromQuery, WithAnonymization
 Implement `WithMultipleSheets` and return an array of sheet export objects. Each sheet object may implement any concern independently.
 
 ```php
-class ReportExport implements WithMultipleSheets
+TurboExcel::download(new ReportExport(), 'monthly-report.xlsx');
+```
+
+### `WithQuerySplitBySheet` ⚡
+
+Optimized for large datasets sitting in a single flat table. It uses **one single ordered query** and automatically splits it into multiple sheets. You can return different sheet handler objects for different segments of the query.
+
+> [!IMPORTANT]
+> Your query **must be ordered** by the column you are splitting by.
+
+```php
+use TurboExcel\Concerns\WithQuerySplitBySheet;
+use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithMapping;
+use TurboExcel\Concerns\WithTitle;
+
+class FastMultiSheetExport implements WithQuerySplitBySheet
 {
-    public function sheets(): array
+    public function query()
     {
-        return [
-            new UsersSheet(),   // implements FromQuery, WithTitle, WithHeadings, WithMapping
-            new OrdersSheet(),  // implements FromQuery, WithTitle, WithHeadings, WithMapping
-        ];
+        // 1. Query must be ordered
+        return DB::table('reports')->orderBy('category');
+    }
+
+    public function splitByColumn(): string
+    {
+        // 2. The column triggers a new sheet whenever its value changes
+        return 'category';
+    }
+
+    public function sheet(mixed $row): object
+    {
+        // 3. Return a handler for this sheet. 
+        // It can implement any concern (Headings, Mapping, Styles, etc.)
+        return match($row->category) {
+            'VIP'      => new VipSheetHandler(),
+            'Standard' => new StandardSheetHandler(),
+            default    => new DefaultSheetHandler(),
+        };
     }
 }
 
-TurboExcel::download(new ReportExport(), 'monthly-report.xlsx');
+class VipSheetHandler implements WithTitle, WithHeadings, WithMapping
+{
+    public function title(): string   { return '⭐ VIP Report'; }
+    public function headings(): array { return ['VIP Name', 'Priority']; }
+    public function map($row): array  { return [$row->name, $row->level]; }
+}
 ```
 
 ---

@@ -14,6 +14,7 @@ use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithMapping;
 use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithMultipleSheets;
+use TurboExcel\Concerns\WithQuerySplitBySheet;
 use TurboExcel\Concerns\WithStyles;
 use TurboExcel\Concerns\WithTitle;
 use TurboExcel\Enums\Format;
@@ -67,7 +68,9 @@ final class Exporter
         $writer->open($path);
 
         $totalRows = 0;
-        if ($this->export instanceof WithMultipleSheets) {
+        if ($this->export instanceof WithQuerySplitBySheet) {
+            $totalRows = $this->writeSplitSheet($this->export, $writer, $isDebug);
+        } elseif ($this->export instanceof WithMultipleSheets) {
             $totalRows = $this->writeMultipleSheets($this->export->sheets(), $writer, $isDebug);
         } else {
             $totalRows = $this->writeSheet($this->export, $writer, true, $isDebug);
@@ -105,6 +108,92 @@ final class Exporter
         }
 
         return $totalRows;
+    }
+
+    private function writeSplitSheet(WithQuerySplitBySheet $export, WriterInterface $writer, bool $isDebug): int
+    {
+        if ($this->format === Format::CSV) {
+            throw new TurboExcelException(
+                'WithQuerySplitBySheet is only supported for XLSX exports.',
+            );
+        }
+
+        $currentSplitValue = null;
+        $rowsWritten       = 0;
+        $isFirstSheet      = true;
+        $headingsWritten   = false;
+
+        $chunkSize = $export instanceof WithChunkSize ? $export->chunkSize() : 1000;
+        $splitCol  = $export->splitByColumn();
+
+        // The active handler for the current sheet segment.
+        $handler            = $export;
+        $columnStyles       = [];
+        $headerStyle        = null;
+        $anonymizeColumns   = [];
+        $anonymizeReplacement = '';
+
+        foreach ($this->resolveRows($export, $chunkSize) as $rawRow) {
+            $item = $this->normaliseRow($rawRow);
+            $splitValue = $item[$splitCol] ?? null;
+
+            if ($isFirstSheet || $splitValue !== $currentSplitValue) {
+                // Determine the new sheet handler
+                $handler = $export->sheet($rawRow);
+                
+                $title = $handler instanceof WithTitle
+                    ? $handler->title()
+                    : 'Sheet ' . ($splitValue ?? '1');
+
+                $writer->addSheet($title, $isFirstSheet);
+                
+                $isFirstSheet    = false;
+                $headingsWritten = false;
+                $currentSplitValue = $splitValue;
+
+                // Refresh sheet-level concerns from the new handler
+                $columnStyles = $this->resolveColumnStyles($handler);
+                $headerStyle  = $columnStyles['header'] ?? null;
+
+                $shouldAnonymize      = $handler instanceof WithAnonymization && (!method_exists($handler, 'isAnonymizationEnabled') || $handler->isAnonymizationEnabled());
+                $anonymizeColumns     = $shouldAnonymize ? $handler->anonymizeColumns() : [];
+                $anonymizeReplacement = $handler instanceof WithAnonymization ? $handler->anonymizeReplacement() : '';
+
+                if ($isDebug) {
+                    \Illuminate\Support\Facades\Log::debug("TurboExcel: Split detected, starting sheet '{$title}' with handler [" . $handler::class . "]");
+                }
+            }
+
+            $row = $handler instanceof WithMapping
+                ? $handler->map($rawRow)
+                : $item;
+
+            if ($anonymizeColumns) {
+                foreach ($anonymizeColumns as $col) {
+                    if (array_key_exists($col, $row)) {
+                        $row[$col] = $anonymizeReplacement;
+                    }
+                }
+            }
+
+            if (! $headingsWritten) {
+                $headings = $handler instanceof WithHeadings
+                    ? $handler->headings()
+                    : array_keys($row);
+
+                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($headings, $headerStyle));
+                $headingsWritten = true;
+            }
+
+            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValuesWithStyles(array_values($row), null, $columnStyles));
+            $rowsWritten++;
+
+            if ($this->onProgress) {
+                ($this->onProgress)();
+            }
+        }
+
+        return $rowsWritten;
     }
 
     private function writeSheet(object $export, WriterInterface $writer, bool $first, bool $isDebug): int
@@ -188,10 +277,11 @@ final class Exporter
     private function resolveRows(object $export, int $chunkSize): iterable
     {
         return match (true) {
-            $export instanceof FromQuery      => $export->query()->lazy($chunkSize),
-            $export instanceof FromCollection => $export->collection(),
-            $export instanceof FromArray      => $export->array(),
-            $export instanceof FromGenerator  => $export->generator(),
+            $export instanceof FromQuery,
+            $export instanceof WithQuerySplitBySheet => $export->query()->lazy($chunkSize),
+            $export instanceof FromCollection        => $export->collection(),
+            $export instanceof FromArray             => $export->array(),
+            $export instanceof FromGenerator         => $export->generator(),
             default => throw new TurboExcelException(
                 sprintf(
                     'Export class [%s] must implement one of: FromQuery, FromCollection, FromArray, or FromGenerator.',
