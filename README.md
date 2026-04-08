@@ -201,6 +201,31 @@ class CustomCsvExport implements FromQuery, WithCsvOptions
 }
 ```
 
+### `WithAnonymization` 🛡️
+
+Declaratively mask sensitive data (PII/GDPR) across your export without cluttering your mapping logic. It uses a high-performance in-place replacement loop.
+
+```php
+use TurboExcel\Concerns\WithAnonymization;
+
+class UsersExport implements FromQuery, WithAnonymization
+{
+    public function query() { ... }
+
+    // Column keys to mask (mapped or raw keys)
+    public function anonymizeColumns(): array
+    {
+        return ['email', 'phone_number', 'address'];
+    }
+
+    // Replacement string (default is empty string)
+    public function anonymizeReplacement(): string
+    {
+        return '[HIDDEN]';
+    }
+}
+```
+
 ---
 
 ## Multi-Sheet Exports (XLSX only)

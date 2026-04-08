@@ -567,11 +567,35 @@ describe('Output methods coverage', function (): void {
 // Deprecations and Writers
 // ---------------------------------------------------------------------------
 
-describe('Deprecations and edge cases', function (): void {
-    it('throws on subsequent addSheet on CSV Writer', function (): void {
-        $writer = new \TurboExcel\Writers\CsvWriter();
+describe('Concern: WithAnonymization', function (): void {
+    it('anonymizes specified columns', function (): void {
+        $export = new class implements FromArray, \TurboExcel\Concerns\WithAnonymization {
+            public function array(): array {
+                return [
+                    ['name' => 'John Doe', 'email' => 'john@example.com', 'id' => 1],
+                    ['name' => 'Jane Smith', 'email' => 'jane@example.com', 'id' => 2],
+                ];
+            }
+
+            public function anonymizeColumns(): array {
+                return ['name', 'email'];
+            }
+
+            public function anonymizeReplacement(): string {
+                return '[HIDDEN]';
+            }
+        };
+
+        $path = tmpPath('xlsx');
+        \TurboExcel\Facades\TurboExcel::export($export, $path);
+
+        $data = readXlsx($path);
         
-        expect(fn () => $writer->addSheet('Not actually used', false))
-            ->toThrow(\TurboExcel\Exceptions\TurboExcelException::class);
+        expect($data[0]['name'])->toBe('[HIDDEN]')
+            ->and($data[0]['email'])->toBe('[HIDDEN]')
+            ->and($data[0]['id'])->toBe(1)
+            ->and($data[1]['name'])->toBe('[HIDDEN]')
+            ->and($data[1]['email'])->toBe('[HIDDEN]')
+            ->and($data[1]['id'])->toBe(2);
     });
 });

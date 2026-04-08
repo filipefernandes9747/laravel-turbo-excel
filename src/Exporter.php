@@ -12,6 +12,7 @@ use TurboExcel\Concerns\WithChunkSize;
 use TurboExcel\Concerns\WithColumnFormatting;
 use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithMapping;
+use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithMultipleSheets;
 use TurboExcel\Concerns\WithStyles;
 use TurboExcel\Concerns\WithTitle;
@@ -124,6 +125,10 @@ final class Exporter
         $columnStyles = $this->resolveColumnStyles($export);
         $headerStyle  = $columnStyles['header'] ?? null;
 
+        // --- Anonymization ---
+        $anonymizeColumns     = $export instanceof WithAnonymization ? $export->anonymizeColumns() : [];
+        $anonymizeReplacement = $export instanceof WithAnonymization ? $export->anonymizeReplacement() : '';
+
         // --- Stream rows ---
         $headingsWritten = false;
         $rowsWritten = 0;
@@ -132,6 +137,14 @@ final class Exporter
             $row = $export instanceof WithMapping
                 ? $export->map($rawRow)
                 : $this->normaliseRow($rawRow);
+
+            if ($anonymizeColumns) {
+                foreach ($anonymizeColumns as $col) {
+                    if (array_key_exists($col, $row)) {
+                        $row[$col] = $anonymizeReplacement;
+                    }
+                }
+            }
 
             // Write the heading row once, before the first data row.
             if (! $headingsWritten) {
