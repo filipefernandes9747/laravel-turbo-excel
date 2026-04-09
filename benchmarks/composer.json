@@ -1,0 +1,37 @@
+{
+    "name": "filipefernandes/laravel-turbo-excel-benchmarks",
+    "description": "Benchmarks comparing laravel-turbo-excel vs maatwebsite/excel",
+    "type": "project",
+    "require": {
+        "php": "^8.2",
+        "laravel/laravel": "^11.0",
+        "filipefernandes/laravel-turbo-excel": "*",
+        "maatwebsite/excel": "^3.1",
+        "openspout/openspout": "^4.23"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Benchmarks\\": "src/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "require-dev": {
+        "orchestra/testbench": "9.0"
+    }
+}
