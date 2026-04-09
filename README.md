@@ -69,6 +69,23 @@ TurboExcel::store(new UsersExport(), 'exports/users.xlsx', disk: 's3');
 TurboExcel::export(new UsersExport(), storage_path('exports/users.xlsx'));
 ```
 
+### Or using the `Exportable` trait
+
+Add the `Exportable` trait to your export class to trigger exports fluently:
+
+```php
+use TurboExcel\Concerns\Exportable;
+
+class UsersExport implements FromQuery
+{
+    use Exportable;
+    // ...
+}
+
+// Then in your controller:
+return (new UsersExport())->download('users.xlsx');
+```
+
 ---
 
 ## Data Source Concerns
