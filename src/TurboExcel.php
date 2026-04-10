@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace TurboExcel;
 
-use TurboExcel\Enums\Format;
+use Illuminate\Bus\Batch;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use TurboExcel\Enums\Format;
+use TurboExcel\Import\Importer as ImportOrchestrator;
+use TurboExcel\Import\Result as ImportResult;
 
 /**
  * Turbo-Excel service class.
@@ -16,6 +19,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *   TurboExcel::download(new UsersExport(), 'users.xlsx');
  *   TurboExcel::store(new UsersExport(), 'exports/users.xlsx', disk: 's3');
  *   TurboExcel::export(new UsersExport(), '/abs/path/report.xlsx');
+ *   TurboExcel::import(new UsersImport(), '/abs/path/users.csv');
  */
 class TurboExcel
 {
@@ -120,6 +124,17 @@ class TurboExcel
         (new Exporter($export, $format))->export($path);
 
         return $path;
+    }
+
+    /**
+     * Run a concern-based import. Returns {@see ImportResult} when executed synchronously, or a
+     * {@see Batch} when the import uses {@see \TurboExcel\Import\Concerns\ShouldQueue}.
+     * {@see ImportResult::$rows} holds mapped, validated rows when the import implements
+     * {@see \TurboExcel\Import\Concerns\ToCollection}.
+     */
+    public function import(object $import, string $path, ?Format $format = null): ImportResult|Batch
+    {
+        return (new ImportOrchestrator())->import($import, $path, $format);
     }
 
     // ---------------------------------------------------------------------------

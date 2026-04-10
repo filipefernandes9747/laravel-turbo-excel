@@ -1,0 +1,271 @@
+<?php
+
+declare(strict_types=1);
+
+namespace TurboExcel\Import;
+
+use TurboExcel\Concerns\WithCsvOptions;
+use TurboExcel\Enums\Format;
+use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Import\Concerns\WithHeaderRow;
+use TurboExcel\Import\Pipeline\HeaderProcessor;
+use TurboExcel\Import\Readers\CsvReader;
+use TurboExcel\Import\Segments\CsvReadSegment;
+use TurboExcel\Import\Segments\XlsxReadSegment;
+
+final class ImportScanner
+{
+    public function __construct(
+        private readonly object $import,
+        private readonly string $path,
+        private readonly Format $format,
+        private readonly int $chunkSize,
+        /**
+         * 0-based worksheet index for XLSX scans. `null` = scan only the first worksheet (default).
+         */
+        private readonly ?int $xlsxSheetIndex = null,
+    ) {
+        if ($this->chunkSize < 1) {
+            throw new TurboExcelException('chunkSize must be at least 1.');
+        }
+    }
+
+    public function scan(): ImportScan
+    {
+        return match ($this->format) {
+            Format::CSV  => $this->scanCsv(),
+            Format::XLSX => $this->scanXlsx(),
+        };
+    }
+
+    private function scanCsv(): ImportScan
+    {
+        $handle = fopen($this->path, 'rb');
+        if ($handle === false) {
+            throw new TurboExcelException("Cannot open CSV: {$this->path}");
+        }
+
+        [$delimiter, $enclosure, $escape] = $this->csvOptions();
+
+        try {
+            CsvReader::skipUtf8BomIfAtStart($handle);
+
+            $headerRow = $this->import instanceof WithHeaderRow ? max(1, $this->import->headerRow()) : null;
+            $headerKeys = null;
+            $rowNum = 1;
+
+            /** @var list<int> $segmentStarts */
+            $segmentStarts = [];
+            $dataCount = 0;
+
+            while (! feof($handle)) {
+                $posBefore = ftell($handle);
+                if ($posBefore === false) {
+                    break;
+                }
+
+                $line = fgetcsv($handle, 0, $delimiter, $enclosure, $escape);
+                if ($line === false) {
+                    break;
+                }
+
+                if ($this->isCsvRecordEmpty($line)) {
+                    ++$rowNum;
+
+                    continue;
+                }
+
+                if ($headerRow !== null && $rowNum === $headerRow) {
+                    /** @var list<string> $cells */
+                    $cells = $this->normalizeCsvLine($line);
+                    HeaderProcessor::validateHeaders($cells, $this->import);
+                    $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
+                    ++$rowNum;
+
+                    continue;
+                }
+
+                if ($headerRow !== null && $rowNum < $headerRow) {
+                    ++$rowNum;
+
+                    continue;
+                }
+
+                if ($dataCount % $this->chunkSize === 0) {
+                    $segmentStarts[] = (int) $posBefore;
+                }
+
+                ++$dataCount;
+                ++$rowNum;
+            }
+
+            if ($dataCount === 0) {
+                return new ImportScan($headerKeys, []);
+            }
+
+            $segments = $this->buildCsvSegments($segmentStarts);
+
+            return new ImportScan($headerKeys, $segments);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * @param  list<int>  $starts
+     * @return list<CsvReadSegment>
+     */
+    private function buildCsvSegments(array $starts): array
+    {
+        $segments = [];
+        $n = count($starts);
+        for ($i = 0; $i < $n; $i++) {
+            $start = $starts[$i];
+            $end = isset($starts[$i + 1]) ? $starts[$i + 1] : null;
+            $segments[] = new CsvReadSegment($start, $end);
+        }
+
+        return $segments;
+    }
+
+    private function scanXlsx(): ImportScan
+    {
+        $headerRow = $this->import instanceof WithHeaderRow ? max(1, $this->import->headerRow()) : null;
+        $headerKeys = null;
+
+        /** @var list<int> $segmentStarts */
+        $segmentStarts = [];
+        $dataCount = 0;
+        $lastDataRow = null;
+
+        $openSpout = new \OpenSpout\Reader\XLSX\Reader();
+        $openSpout->open($this->path);
+
+        try {
+            $sheetIndexTarget = $this->xlsxSheetIndex;
+            $currentSheetIndex = 0;
+
+            foreach ($openSpout->getSheetIterator() as $sheet) {
+                if ($sheetIndexTarget !== null) {
+                    if ($currentSheetIndex !== $sheetIndexTarget) {
+                        ++$currentSheetIndex;
+
+                        continue;
+                    }
+                } elseif ($currentSheetIndex > 0) {
+                    break;
+                }
+
+                $rowIndex = 0;
+
+                foreach ($sheet->getRowIterator() as $row) {
+                    ++$rowIndex;
+
+                    if ($headerRow !== null && $rowIndex === $headerRow) {
+                        $cells = \TurboExcel\Import\Readers\XlsxReader::indexedCells($row);
+                        HeaderProcessor::validateHeaders($cells, $this->import);
+                        $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
+
+                        continue;
+                    }
+
+                    if ($headerRow !== null && $rowIndex < $headerRow) {
+                        continue;
+                    }
+
+                    if ($dataCount % $this->chunkSize === 0) {
+                        $segmentStarts[] = $rowIndex;
+                    }
+
+                    ++$dataCount;
+                    $lastDataRow = $rowIndex;
+                }
+
+                break;
+            }
+        } finally {
+            $openSpout->close();
+        }
+
+        if ($dataCount === 0) {
+            return new ImportScan($headerKeys, []);
+        }
+
+        $segments = $this->buildXlsxSegments(
+            $segmentStarts,
+            $lastDataRow,
+            $this->xlsxSheetIndex ?? 0,
+        );
+
+        return new ImportScan($headerKeys, $segments);
+    }
+
+    /**
+     * @param  list<int>  $starts
+     * @return list<XlsxReadSegment>
+     */
+    private function buildXlsxSegments(array $starts, ?int $lastDataRow, int $sheetIndex): array
+    {
+        if ($lastDataRow === null) {
+            return [];
+        }
+
+        $segments = [];
+        $n = count($starts);
+        for ($i = 0; $i < $n; $i++) {
+            $start = $starts[$i];
+            $end = isset($starts[$i + 1]) ? $starts[$i + 1] - 1 : $lastDataRow;
+            $segments[] = new XlsxReadSegment($start, $end, $sheetIndex);
+        }
+
+        return $segments;
+    }
+
+    /**
+     * @return array{0: string, 1: string, 2: string}
+     */
+    private function csvOptions(): array
+    {
+        if ($this->import instanceof WithCsvOptions) {
+            return [
+                $this->import->delimiter(),
+                $this->import->enclosure(),
+                '\\',
+            ];
+        }
+
+        return [',', '"', '\\'];
+    }
+
+    /**
+     * @param  array<int, string|null>  $line
+     */
+    private function isCsvRecordEmpty(array $line): bool
+    {
+        if ($line === []) {
+            return true;
+        }
+
+        foreach ($line as $cell) {
+            if ($cell !== null && trim((string) $cell) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<int, string|null>  $line
+     * @return list<string>
+     */
+    private function normalizeCsvLine(array $line): array
+    {
+        $cells = [];
+        foreach ($line as $cell) {
+            $cells[] = $cell === null ? '' : (string) $cell;
+        }
+
+        return array_values($cells);
+    }
+}

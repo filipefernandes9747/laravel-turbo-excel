@@ -4,9 +4,9 @@
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://php.net)
 [![Laravel](https://img.shields.io/badge/Laravel-10--12-red)](https://laravel.com)
 
-Memory-efficient Excel and CSV exports for Laravel, powered by [openspout/openspout](https://github.com/openspout/openspout).
+Memory-efficient Excel and CSV **exports and imports** for Laravel, powered by [openspout/openspout](https://github.com/openspout/openspout).
 
-Export classes implement lightweight **Concern interfaces** — the same pattern as Laravel Excel — giving you full control with zero magic.
+Export and import classes implement lightweight **Concern interfaces** — the same pattern as Laravel Excel — giving you full control with zero magic.
 
 ---
 
@@ -340,6 +340,12 @@ class VipSheetHandler implements WithTitle, WithHeadings, WithMapping
 | `TurboExcel::export($export, '/abs/path/file.xlsx')` | Write to filesystem path      |
 | `TurboExcel::queue($export, 'path/file.xlsx', 's3')` | Dispatch to a Laravel Queue   |
 
+**Import**
+
+| Method | Description |
+| ------ | ----------- |
+| `TurboExcel::import($import, '/abs/path.csv', ?Format)` | Stream import from a filesystem path — returns `TurboExcel\Import\Result` when synchronous, or `Illuminate\Bus\Batch` when the import uses `TurboExcel\Import\Concerns\ShouldQueue` (see [Imports](#imports-csv--xlsx)) |
+
 The export format is auto-detected from the filename extension (`.xlsx` → XLSX, `.csv` → CSV).
 Pass an explicit `Format` case to override:
 
@@ -348,6 +354,154 @@ use TurboExcel\Enums\Format;
 
 TurboExcel::download(new UsersExport(), 'users.xlsx', Format::CSV);
 ```
+
+---
+
+## Imports (CSV & XLSX)
+
+Imports are **streamed** row-by-row for predictable memory use. Internally, CSV is read with PHP’s `fgetcsv`; XLSX is read with OpenSpout on the **first worksheet only**. Readers always yield **0-indexed cell arrays** (`0 => 'Alice', 1 => 'alice@example.com'`). Associative rows and header logic run in the import **pipeline** only when you opt in via concerns — nothing assumes a header row unless you implement `WithHeaderRow`.
+
+### Basic usage
+
+```php
+use TurboExcel\Facades\TurboExcel;
+use TurboExcel\Import\Concerns\ToModel;
+use TurboExcel\Import\Concerns\WithHeaderRow;
+use TurboExcel\Import\Concerns\WithMapping;
+use TurboExcel\Import\Concerns\WithNormalizedHeaders;
+use TurboExcel\Import\Concerns\WithValidation;
+
+class UsersImport implements ToModel, WithHeaderRow, WithNormalizedHeaders, WithMapping, WithValidation
+{
+    public function headerRow(): int
+    {
+        return 1;
+    }
+
+    public function headerNormalization(): array|callable
+    {
+        return fn (string $header): string => strtolower(trim($header));
+    }
+
+    public function map(array $row): array
+    {
+        return [
+            'name'  => trim($row['name']),
+            'email' => strtolower($row['email']),
+        ];
+    }
+
+    public function rules(): array
+    {
+        return [
+            'email' => 'required|email',
+        ];
+    }
+
+    public function model(array $row): ?User
+    {
+        return new User($row);
+    }
+}
+
+$result = TurboExcel::import(new UsersImport(), storage_path('imports/users.csv'));
+```
+
+You can also return a **fixed map** from trimmed spreadsheet headers to attribute keys (any header not listed keeps the trimmed text as the key):
+
+```php
+public function headerNormalization(): array
+{
+    return [
+        'FULL NAME'     => 'name',
+        'Email Address' => 'email',
+    ];
+}
+```
+
+When the import runs **synchronously**, `$result` is a `TurboExcel\Import\Result`:
+
+| Property    | Meaning |
+| ----------- | ------- |
+| `processed` | Rows that completed the pipeline (validation + persist / collection append, if applicable) |
+| `failed`    | Rows that failed but were handled via `SkipsOnFailure` |
+| `rows`      | `Illuminate\Support\Collection` of associative arrays (after **map** + **validate**) when the import (or any sheet import in a multi-sheet run) uses `ToCollection`. Multi-sheet sync imports **concatenate** sheets in workbook order; otherwise `null` |
+
+The file format is inferred from the extension (`.csv` / `.xlsx`). Pass an explicit `TurboExcel\Enums\Format` as the third argument to override.
+
+### Import concerns (`TurboExcel\Import\Concerns`)
+
+| Concern                 | Role |
+| ----------------------- | ---- |
+| `ToModel`               | `model(array $row): ?Model` — return `null` to skip persisting that row |
+| `ToCollection`        | Marker: each successful row (after map + validate) is pushed onto `$result->rows`. Use instead of `ToModel` when you want an in-memory collection, or combine with `ToModel` to persist and collect. **Not compatible with `ShouldQueue`.** |
+| `OnEachRow`             | `onRow(array $row): void` — process each row instantly via callback after it is mapped and validated |
+| `OnEachChunk`           | `onChunk(Collection $chunk): void` — process parsed rows in raw chunks. Combined with `WithChunkReading` to configure chunk size |
+| `WithMapping`           | `map(array $row): array` — transform the row before validation / `model()` |
+| `WithValidation`        | `rules(): array` — Laravel validator rules (keys match your mapped row) |
+| `WithHeaderRow`         | `headerRow(): int` — 1-based row index of the header (first row after a UTF-8 BOM is row `1`) |
+| `WithNormalizedHeaders` | `headerNormalization()` returns **either** an associative map (`'Header In File' => 'attr_key'`, trimmed text as keys; unmapped headers keep the trimmed string) **or** a callable `fn (string $header): string`; duplicate keys (`name`, `name_1`, …) and empty headers (`column_1`, …) are still applied afterward |
+| `WithHeaderValidation`  | `headers(): array` — validate the header row (keys are **normalized** header names) |
+| `WithChunkReading`      | `chunkSize(): int` — used together with queued imports to split work |
+| `ShouldQueue`           | Marker: run the import via the queue (see below). **Not** Laravel’s `Illuminate\Contracts\Queue\ShouldQueue` — alias this interface in your import class if you also implement queued jobs |
+| `SkipsOnFailure`        | `onFailure(array $row, \Throwable $e): void` — record failures instead of stopping the import |
+| `LogsFailuresToCsv`     | Trait: implement `SkipsOnFailure` on your class and `use LogsFailuresToCsv;` to automatically dump failed rows + error messages into a local CSV file |
+| `SkipsEmptyRows`        | Marker: automatically skips and ignores completely empty/blank rows before mapping and validation |
+| `WithBatchInserts`      | `batchSize(): int` — buffer rows and `insert` in batches (no per-row `save()`; events/casts limitations apply as with raw `insert`) |
+| `WithUpserts`           | `uniqueBy(): array\|string` — combined with `WithBatchInserts`, switches batch inserts into bulk `upsert()` queries based on this unique key |
+| `WithUpsertColumns`     | `upsertColumns(): ?array` — used with `WithUpserts` to explicitly declare which columns should be updated when an upsert collision occurs |
+| `WithStartRow`          | `startRow(): int` — start reading data from this spreadsheet row (default is `1`) |
+| `WithLimit`             | `limit(): int` — stop reading after this many rows have been processed |
+| `WithMetrics`           | Marker (or call `->withMetrics()`): logs performance data (memory, timing, row counts) to your Laravel log |
+| `Importable`            | Trait: adds `import()`, `queue()`, and `withMetrics()` methods for a fluent API |
+| `RemembersRowNumber`    | Trait + Interface: automatically tracks the physical row index. Ensure your class implements `TurboExcel\Import\Concerns\RemembersRowNumber` and uses the trait |
+| `WithMultipleSheets`   | **XLSX only.** `sheets(): array` returns a **list** of import objects, one per worksheet in **workbook order** (index `0` = first sheet). Put `ToModel`, `ToCollection`, headers, mapping, validation, and optional `WithChunkReading` on **each** sheet import — the coordinator should normally implement only `WithMultipleSheets` (and optionally `ShouldQueue`). Not valid for CSV. |
+
+Pipeline order per row: optional header → associative combine → **map** → **validate** → **model** / batch insert, and **append to `$result->rows`** when `ToCollection` is implemented.
+
+### Multi-sheet XLSX imports
+
+```php
+use TurboExcel\Import\Concerns\WithMultipleSheets;
+
+class WorkbookImport implements WithMultipleSheets
+{
+    public function sheets(): array
+    {
+        return [
+            new UsersSheetImport(),   // first worksheet
+            new OrdersSheetImport(),  // second worksheet
+        ];
+    }
+}
+
+$result = TurboExcel::import(new WorkbookImport(), storage_path('workbook.xlsx'));
+// $result->processed / $result->failed are totals across all sheets
+// $result->rows concatenates rows from each sheet import that uses ToCollection
+```
+
+Queued multi-sheet imports dispatch one or more chunk jobs **per sheet** (each job carries a `sheetIndex` on `XlsxReadSegment`). `WithChunkReading` / `chunkSize()` are read from **each sheet’s** import object when present.
+
+### CSV options & BOM
+
+- Implement `TurboExcel\Concerns\WithCsvOptions` on the import class to set **delimiter** and **enclosure** (same concern as exports).
+- A **UTF-8 BOM** (`EF BB BF`) is consumed only when the reader opens the file at **byte offset 0**, so the first column is not corrupted. Chunk jobs that start later in the file do not strip the BOM again.
+
+### Queued & chunked imports
+
+If your import implements `TurboExcel\Import\Concerns\ShouldQueue`:
+
+- **`ToCollection` is not supported** with queued imports (there is no single merged `Collection` across workers). Remove `ShouldQueue` or use `ToModel` / a synchronous import.
+- With **`WithChunkReading`**, TurboExcel performs one **scan** of the file, then dispatches `TurboExcel\Import\Jobs\ProcessChunkJob` instances inside a **`Illuminate\Bus\Batch`**. **CSV** chunks use **byte ranges** in the raw file; **XLSX** chunks use **inclusive row index ranges** per worksheet (`XlsxReadSegment` includes a 0-based `sheetIndex`).
+- Without `WithChunkReading`, a **single** queued job processes the whole file (or **one job per sheet** when using import `WithMultipleSheets`).
+
+The `import()` method returns an `Illuminate\Bus\Batch` when jobs are dispatched. Each job increments cache counters under:
+
+- `turbo_excel_import:{uuid}:processed`
+- `turbo_excel_import:{uuid}:failed`
+
+(The UUID is shared by all jobs in that batch.) If the file has **no data rows** (for example header-only CSV), you get a `Result` with zero counts and **no** batch is dispatched.
+
 
 ---
 
