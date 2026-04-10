@@ -44,12 +44,12 @@ class ProcessChunkJob implements ShouldQueue
             return;
         }
 
-        $localizer = new Localizer();
+        $localizer = new Localizer;
         $isRemote = $this->disk !== null;
         $workingPath = $isRemote ? $localizer->localize($this->filePath, $this->disk) : $this->filePath;
 
         try {
-            (new SegmentImporter())->run(
+            (new SegmentImporter)->run(
                 $this->import,
                 $workingPath,
                 $this->format,

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Benchmarks;
 
+use Illuminate\Database\Eloquent\Model;
 use TurboExcel\Concerns\FromQuery;
 use TurboExcel\Concerns\WithChunkSize;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder;
 
 class User extends Model
 {

@@ -16,7 +16,7 @@ class TurboExport implements FromGenerator, WithChunkSize
         for ($i = 1; $i <= $this->rows; $i++) {
             yield [
                 'id' => $i,
-                'name' => 'User ' . $i,
+                'name' => 'User '.$i,
                 'email' => "user{$i}@example.com",
                 'status' => $i % 2 === 0 ? 'active' : 'inactive',
                 'created_at' => '2023-10-01 10:00:00',

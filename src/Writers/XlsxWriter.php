@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace TurboExcel\Writers;
 
-use TurboExcel\Writers\Contracts\WriterInterface;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Writer\XLSX\Writer;
+use TurboExcel\Writers\Contracts\WriterInterface;
 
 final class XlsxWriter implements WriterInterface
 {
@@ -14,7 +14,7 @@ final class XlsxWriter implements WriterInterface
 
     public function open(string $path): void
     {
-        $this->writer = new Writer();
+        $this->writer = new Writer;
         $this->writer->openToFile($path);
     }
 
@@ -37,7 +37,7 @@ final class XlsxWriter implements WriterInterface
         $this->writer->getCurrentSheet()->setName($name);
     }
 
-    public function writeRow(\OpenSpout\Common\Entity\Row $row): void
+    public function writeRow(Row $row): void
     {
         $this->writer->addRow($row);
     }

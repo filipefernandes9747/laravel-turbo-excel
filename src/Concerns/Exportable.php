@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace TurboExcel\Concerns;
 
-use TurboExcel\Enums\Format;
-use TurboExcel\Facades\TurboExcel;
 use Illuminate\Foundation\Bus\PendingDispatch;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use TurboExcel\Enums\Format;
+use TurboExcel\Facades\TurboExcel;
 
 trait Exportable
 {

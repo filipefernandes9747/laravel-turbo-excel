@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace TurboExcel\Writers;
 
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Writer\CSV\Options;
+use OpenSpout\Writer\CSV\Writer;
+use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\Writers\Contracts\WriterInterface;
-use OpenSpout\Common\Entity\Row;
-use OpenSpout\Writer\CSV\Writer;
-use OpenSpout\Writer\CSV\Options;
 
 final class CsvWriter implements WriterInterface
 {
     private Writer $writer;
+
     private ?Options $options = null;
 
     public function open(string $path): void
@@ -23,8 +25,8 @@ final class CsvWriter implements WriterInterface
 
     public function applyOptions(object $export): void
     {
-        if ($export instanceof \TurboExcel\Concerns\WithCsvOptions) {
-            $this->options = new Options();
+        if ($export instanceof WithCsvOptions) {
+            $this->options = new Options;
             $this->options->FIELD_DELIMITER = $export->delimiter();
             $this->options->FIELD_ENCLOSURE = $export->enclosure();
             $this->options->SHOULD_ADD_BOM = $export->addBom();
@@ -45,7 +47,7 @@ final class CsvWriter implements WriterInterface
         }
     }
 
-    public function writeRow(\OpenSpout\Common\Entity\Row $row): void
+    public function writeRow(Row $row): void
     {
         $this->writer->addRow($row);
     }

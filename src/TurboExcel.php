@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace TurboExcel;
 
 use Illuminate\Bus\Batch;
+use Illuminate\Foundation\Bus\PendingDispatch;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use TurboExcel\Enums\Format;
+use TurboExcel\Import\Concerns\ShouldQueue;
+use TurboExcel\Import\Concerns\ToCollection;
 use TurboExcel\Import\Importer as ImportOrchestrator;
 use TurboExcel\Import\Result as ImportResult;
+use TurboExcel\Jobs\ExportJob;
 
 /**
  * Turbo-Excel service class.
@@ -40,8 +44,8 @@ class TurboExcel
         string $filePath,
         string $disk = 'local',
         ?Format $format = null,
-    ): \Illuminate\Foundation\Bus\PendingDispatch {
-        return \TurboExcel\Jobs\ExportJob::dispatch($export, $filePath, $disk, $format);
+    ): PendingDispatch {
+        return ExportJob::dispatch($export, $filePath, $disk, $format);
     }
 
     /**
@@ -103,7 +107,7 @@ class TurboExcel
         ?Format $format = null,
     ): string {
         $format ??= Format::fromFilename($path);
-        $tmp     = $this->writeTmp($export, $format);
+        $tmp = $this->writeTmp($export, $format);
 
         try {
             Storage::disk($disk)->put($path, fopen($tmp, 'rb'));
@@ -128,13 +132,13 @@ class TurboExcel
 
     /**
      * Run a concern-based import. Returns {@see ImportResult} when executed synchronously, or a
-     * {@see Batch} when the import uses {@see \TurboExcel\Import\Concerns\ShouldQueue}.
+     * {@see Batch} when the import uses {@see ShouldQueue}.
      * {@see ImportResult::$rows} holds mapped, validated rows when the import implements
-     * {@see \TurboExcel\Import\Concerns\ToCollection}.
+     * {@see ToCollection}.
      */
     public function import(object $import, string $path, ?string $disk = null, ?Format $format = null): ImportResult|Batch
     {
-        return (new ImportOrchestrator())->import($import, $path, $disk, $format);
+        return (new ImportOrchestrator)->import($import, $path, $disk, $format);
     }
 
     // ---------------------------------------------------------------------------
@@ -152,7 +156,7 @@ class TurboExcel
             mkdir($dir, 0755, recursive: true);
         }
 
-        $tmp = tempnam($dir, 'turbo-excel-') . '.' . $format->extension();
+        $tmp = tempnam($dir, 'turbo-excel-').'.'.$format->extension();
 
         (new Exporter($export, $format))->export($tmp);
 

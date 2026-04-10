@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace TurboExcel\Import;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
-use Illuminate\Support\Collection;
 use TurboExcel\Import\Concerns\OnEachChunk;
 use TurboExcel\Import\Concerns\OnEachRow;
+use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
 use TurboExcel\Import\Concerns\SkipsOnFailure;
 use TurboExcel\Import\Concerns\ToCollection;
@@ -20,10 +23,6 @@ use TurboExcel\Import\Concerns\WithLimit;
 use TurboExcel\Import\Concerns\WithMetrics;
 use TurboExcel\Import\Concerns\WithProgress;
 use TurboExcel\Import\Concerns\WithStartRow;
-use TurboExcel\Import\Concerns\RemembersRowNumber;
-use TurboExcel\Import\Traits\Importable;
-use TurboExcel\Import\Traits\RemembersRowNumber as RemembersRowNumberTrait;
-use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Pipeline\ModelProcessor;
 use TurboExcel\Import\Pipeline\RowMapper;
@@ -32,7 +31,6 @@ use TurboExcel\Import\Readers\CsvReader;
 use TurboExcel\Import\Readers\XlsxReader;
 use TurboExcel\Import\Segments\CsvReadSegment;
 use TurboExcel\Import\Segments\XlsxReadSegment;
-use Illuminate\Support\Facades\Log;
 
 final class SegmentImporter
 {
@@ -63,7 +61,7 @@ final class SegmentImporter
         }
 
         $csvReader = $this->makeCsvReader($import, $path);
-        $xlsxReader = new XlsxReader();
+        $xlsxReader = new XlsxReader;
         $models = new ModelProcessor($import);
 
         /** @var Collection<int, array<string, mixed>>|null $rows */
@@ -98,9 +96,11 @@ final class SegmentImporter
             }
 
             try {
-                if ($import instanceof WithHeaderRow && $resolvedKeys === null && $rowIndex === max(1, $import->headerRow())) {
-                    HeaderProcessor::validateHeaders($cells, $import);
-                    $resolvedKeys = HeaderProcessor::buildHeaderKeys($cells, $import);
+                if ($import instanceof WithHeaderRow && $rowIndex === max(1, $import->headerRow())) {
+                    if ($resolvedKeys === null) {
+                        HeaderProcessor::validateHeaders($cells, $import);
+                        $resolvedKeys = HeaderProcessor::buildHeaderKeys($cells, $import);
+                    }
 
                     continue;
                 }
@@ -132,7 +132,7 @@ final class SegmentImporter
                     }
                 }
 
-                ++$processed;
+                $processed++;
 
                 if ($metricsEnabled && ($processed % $chunkSize === 0)) {
                     Log::info(sprintf(
@@ -144,7 +144,7 @@ final class SegmentImporter
             } catch (\Throwable $e) {
                 if ($import instanceof SkipsOnFailure) {
                     $import->onFailure($rowForPipeline ?? $cells, $e);
-                    ++$failed;
+                    $failed++;
                 } else {
                     $models->flush();
                     throw $e;
@@ -200,7 +200,7 @@ final class SegmentImporter
 
         if (count($headerKeys) !== count($cells)) {
             throw new TurboExcelException(
-                'Column count does not match header count (' . count($headerKeys) . ' vs ' . count($cells) . ').',
+                'Column count does not match header count ('.count($headerKeys).' vs '.count($cells).').',
             );
         }
 

@@ -85,10 +85,10 @@ final class ModelProcessor
 
         if ($this->import instanceof WithUpserts) {
             $uniqueBy = (array) $this->import->uniqueBy();
-            $updateColumns = $this->import instanceof WithUpsertColumns 
-                ? $this->import->upsertColumns() 
+            $updateColumns = $this->import instanceof WithUpsertColumns
+                ? $this->import->upsertColumns()
                 : null;
-            
+
             $instance->newQuery()->upsert($normalized, $uniqueBy, $updateColumns);
         } else {
             $instance->newQuery()->insert($normalized);

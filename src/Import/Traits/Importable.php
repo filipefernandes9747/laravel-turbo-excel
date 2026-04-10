@@ -14,18 +14,15 @@ trait Importable
 {
     private bool $withMetrics = false;
 
-    /**
-     * @return Result|Batch
-     */
     public function import(string $path, ?Format $format = null): Result|Batch
     {
-        return TurboExcel::import($this, $path, $format);
+        return TurboExcel::import($this, $path, format: $format);
     }
 
     public function queue(string $path, ?Format $format = null): Batch
     {
         // Internal check to ensure it returns a Batch
-        return TurboExcel::import($this, $path, $format);
+        return TurboExcel::import($this, $path, format: $format);
     }
 
     public function withMetrics(): self

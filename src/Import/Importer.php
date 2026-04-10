@@ -10,9 +10,10 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
-use TurboExcel\Import\Concerns\ShouldQueue as QueueImport;
 use TurboExcel\Import\Concerns\OnEachChunk;
 use TurboExcel\Import\Concerns\OnEachRow;
+use TurboExcel\Import\Concerns\RemembersRowNumber;
+use TurboExcel\Import\Concerns\ShouldQueue as QueueImport;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
 use TurboExcel\Import\Concerns\SkipsOnFailure;
 use TurboExcel\Import\Concerns\ToCollection;
@@ -21,13 +22,13 @@ use TurboExcel\Import\Concerns\WithBatchInserts;
 use TurboExcel\Import\Concerns\WithChunkReading;
 use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Concerns\WithHeaderValidation;
-use TurboExcel\Import\Concerns\WithMapping;
 use TurboExcel\Import\Concerns\WithLimit;
+use TurboExcel\Import\Concerns\WithMapping;
 use TurboExcel\Import\Concerns\WithMetrics;
 use TurboExcel\Import\Concerns\WithMultipleSheets;
 use TurboExcel\Import\Concerns\WithNormalizedHeaders;
+use TurboExcel\Import\Concerns\WithProgress;
 use TurboExcel\Import\Concerns\WithStartRow;
-use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Concerns\WithUpsertColumns;
 use TurboExcel\Import\Concerns\WithUpserts;
 use TurboExcel\Import\Concerns\WithValidation;
@@ -39,14 +40,11 @@ final class Importer
 {
     private const XLSX_MAX_PHYSICAL_ROW = 1_048_576;
 
-    /**
-     * @return Result|Batch
-     */
     public function import(object $import, string $path, ?string $disk = null, ?Format $format = null): Result|Batch
     {
         $format ??= Format::fromFilename($path);
-        
-        $localizer = new Localizer();
+
+        $localizer = new Localizer;
         $isRemote = $disk !== null;
         $workingPath = $isRemote ? $localizer->localize($path, $disk) : $path;
 
@@ -86,13 +84,13 @@ final class Importer
         $totalRows = 0;
         $headerKeys = null;
 
-        if ($import instanceof \TurboExcel\Import\Concerns\WithProgress || $import instanceof WithChunkReading) {
-             $scan = (new ImportScanner($import, $path, $format, 1_000_000))->scan();
-             $totalRows = $scan->totalRows;
-             $headerKeys = $scan->headerKeys;
+        if ($import instanceof WithProgress || $import instanceof WithChunkReading) {
+            $scan = (new ImportScanner($import, $path, $format, 1_000_000))->scan();
+            $totalRows = $scan->totalRows;
+            $headerKeys = $scan->headerKeys;
         }
 
-        $segmentImporter = new SegmentImporter();
+        $segmentImporter = new SegmentImporter;
 
         return match ($format) {
             Format::CSV => $segmentImporter->run($import, $path, $format, new CsvReadSegment(0, null), $headerKeys, null, $totalRows),
@@ -107,7 +105,7 @@ final class Importer
             throw new TurboExcelException('WithMultipleSheets::sheets() must return at least one import object.');
         }
 
-        $segmentImporter = new SegmentImporter();
+        $segmentImporter = new SegmentImporter;
         $processed = 0;
         $failed = 0;
         $mergedRows = null;
@@ -136,9 +134,6 @@ final class Importer
         return new Result($processed, $failed, $mergedRows);
     }
 
-    /**
-     * @return Result|Batch
-     */
     private function queueImport(object $import, string $path, ?string $disk, Format $format, string $workingPath): Result|Batch
     {
         if ($import instanceof WithMultipleSheets) {

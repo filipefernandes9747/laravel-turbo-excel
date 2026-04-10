@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use TurboExcel\Concerns\FromArray;
 use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithQuerySplitBySheet;
 use TurboExcel\TurboExcel;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 
 // ---------------------------------------------------------------------------
 // Inline export classes for testing
@@ -27,7 +27,7 @@ class EmptyArrayWithHeadingsExport implements FromArray, WithHeadings
     }
 }
 
-class EmptySplitSheetExport implements WithQuerySplitBySheet, WithHeadings
+class EmptySplitSheetExport implements WithHeadings, WithQuerySplitBySheet
 {
     public function query()
     {
@@ -56,7 +56,7 @@ class EmptySplitSheetExport implements WithQuerySplitBySheet, WithHeadings
 
 function getXlsxRows(string $path): array
 {
-    $reader = new XlsxReader();
+    $reader = new XlsxReader;
     $reader->open($path);
     $rows = [];
     foreach ($reader->getSheetIterator() as $sheet) {
@@ -65,6 +65,7 @@ function getXlsxRows(string $path): array
         }
     }
     $reader->close();
+
     return $rows;
 }
 
@@ -73,10 +74,10 @@ function getXlsxRows(string $path): array
 // ---------------------------------------------------------------------------
 
 describe('Empty Export Handling', function (): void {
-    
+
     it('writes headings even when FromArray returns no data', function (): void {
         $path = tmpPath('xlsx');
-        app(TurboExcel::class)->export(new EmptyArrayWithHeadingsExport(), $path);
+        app(TurboExcel::class)->export(new EmptyArrayWithHeadingsExport, $path);
 
         $rows = getXlsxRows($path);
 
@@ -96,7 +97,7 @@ describe('Empty Export Handling', function (): void {
         });
 
         $path = tmpPath('xlsx');
-        app(TurboExcel::class)->export(new EmptySplitSheetExport(), $path);
+        app(TurboExcel::class)->export(new EmptySplitSheetExport, $path);
 
         $rows = getXlsxRows($path);
 
@@ -109,8 +110,12 @@ describe('Empty Export Handling', function (): void {
     });
 
     it('works correctly for empty FromArray WITHOUT headings (results in 0 rows)', function (): void {
-        $export = new class implements FromArray {
-            public function array(): array { return []; }
+        $export = new class implements FromArray
+        {
+            public function array(): array
+            {
+                return [];
+            }
         };
 
         $path = tmpPath('xlsx');

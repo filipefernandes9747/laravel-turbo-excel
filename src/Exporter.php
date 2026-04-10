@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 namespace TurboExcel;
 
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
+use OpenSpout\Common\Entity\Row;
+use OpenSpout\Common\Entity\Style\Style;
 use TurboExcel\Concerns\FromArray;
 use TurboExcel\Concerns\FromCollection;
 use TurboExcel\Concerns\FromGenerator;
 use TurboExcel\Concerns\FromQuery;
+use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithChunkSize;
 use TurboExcel\Concerns\WithColumnFormatting;
+use TurboExcel\Concerns\WithDebug;
 use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithMapping;
-use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithMultipleSheets;
 use TurboExcel\Concerns\WithQuerySplitBySheet;
 use TurboExcel\Concerns\WithStyles;
@@ -22,8 +27,6 @@ use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\Writers\Contracts\WriterInterface;
 use TurboExcel\Writers\CsvWriter;
 use TurboExcel\Writers\XlsxWriter;
-use Illuminate\Database\Eloquent\Model;
-use OpenSpout\Common\Entity\Style\Style;
 
 /**
  * Orchestrates concern-aware export pipeline.
@@ -43,6 +46,7 @@ final class Exporter
     public function onProgress(\Closure $callback): self
     {
         $this->onProgress = $callback;
+
         return $this;
     }
 
@@ -52,14 +56,14 @@ final class Exporter
 
     public function export(string $path): void
     {
-        $isDebug = $this->export instanceof \TurboExcel\Concerns\WithDebug;
+        $isDebug = $this->export instanceof WithDebug;
         $startTime = microtime(true);
 
         if ($isDebug) {
-            \Illuminate\Support\Facades\Log::info('TurboExcel: Starting export', [
+            Log::info('TurboExcel: Starting export', [
                 'format' => $this->format->value,
-                'path'   => $path,
-                'class'  => $this->export::class,
+                'path' => $path,
+                'class' => $this->export::class,
             ]);
         }
 
@@ -79,10 +83,10 @@ final class Exporter
         $writer->close();
 
         if ($isDebug) {
-            \Illuminate\Support\Facades\Log::info('TurboExcel: Export completed', [
-                'total_rows'     => $totalRows,
-                'execution_time' => round(microtime(true) - $startTime, 2) . 's',
-                'peak_memory'    => round(memory_get_peak_usage() / 1024 / 1024, 2) . 'MB',
+            Log::info('TurboExcel: Export completed', [
+                'total_rows' => $totalRows,
+                'execution_time' => round(microtime(true) - $startTime, 2).'s',
+                'peak_memory' => round(memory_get_peak_usage() / 1024 / 1024, 2).'MB',
             ]);
         }
     }
@@ -119,18 +123,18 @@ final class Exporter
         }
 
         $currentSplitValue = null;
-        $rowsWritten       = 0;
-        $isFirstSheet      = true;
-        $headingsWritten   = false;
+        $rowsWritten = 0;
+        $isFirstSheet = true;
+        $headingsWritten = false;
 
         $chunkSize = $export instanceof WithChunkSize ? $export->chunkSize() : 1000;
-        $splitCol  = $export->splitByColumn();
+        $splitCol = $export->splitByColumn();
 
         // The active handler for the current sheet segment.
-        $handler            = $export;
-        $columnStyles       = [];
-        $headerStyle        = null;
-        $anonymizeColumns   = [];
+        $handler = $export;
+        $columnStyles = [];
+        $headerStyle = null;
+        $anonymizeColumns = [];
         $anonymizeReplacement = '';
 
         foreach ($this->resolveRows($export, $chunkSize) as $rawRow) {
@@ -140,27 +144,27 @@ final class Exporter
             if ($isFirstSheet || $splitValue !== $currentSplitValue) {
                 // Determine the new sheet handler
                 $handler = $export->sheet($rawRow);
-                
+
                 $title = $handler instanceof WithTitle
                     ? $handler->title()
-                    : 'Sheet ' . ($splitValue ?? '1');
+                    : 'Sheet '.($splitValue ?? '1');
 
                 $writer->addSheet($title, $isFirstSheet);
-                
-                $isFirstSheet    = false;
+
+                $isFirstSheet = false;
                 $headingsWritten = false;
                 $currentSplitValue = $splitValue;
 
                 // Refresh sheet-level concerns from the new handler
                 $columnStyles = $this->resolveColumnStyles($handler);
-                $headerStyle  = $columnStyles['header'] ?? null;
+                $headerStyle = $columnStyles['header'] ?? null;
 
-                $shouldAnonymize      = $handler instanceof WithAnonymization && (!method_exists($handler, 'isAnonymizationEnabled') || $handler->isAnonymizationEnabled());
-                $anonymizeColumns     = $shouldAnonymize ? $handler->anonymizeColumns() : [];
+                $shouldAnonymize = $handler instanceof WithAnonymization && (! method_exists($handler, 'isAnonymizationEnabled') || $handler->isAnonymizationEnabled());
+                $anonymizeColumns = $shouldAnonymize ? $handler->anonymizeColumns() : [];
                 $anonymizeReplacement = $handler instanceof WithAnonymization ? $handler->anonymizeReplacement() : '';
 
                 if ($isDebug) {
-                    \Illuminate\Support\Facades\Log::debug("TurboExcel: Split detected, starting sheet '{$title}' with handler [" . $handler::class . "]");
+                    Log::debug("TurboExcel: Split detected, starting sheet '{$title}' with handler [".$handler::class.']');
                 }
             }
 
@@ -181,11 +185,11 @@ final class Exporter
                     ? $handler->headings()
                     : array_keys($row);
 
-                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($headings, $headerStyle));
+                $writer->writeRow(Row::fromValues($headings, $headerStyle));
                 $headingsWritten = true;
             }
 
-            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValuesWithStyles(array_values($row), null, $columnStyles));
+            $writer->writeRow(Row::fromValuesWithStyles(array_values($row), null, $columnStyles));
             $rowsWritten++;
 
             if ($this->onProgress) {
@@ -198,14 +202,14 @@ final class Exporter
         if ($rowsWritten === 0) {
             $title = $export instanceof WithTitle ? $export->title() : 'Sheet 1';
             $writer->addSheet($title, true);
-            
+
             if ($export instanceof WithHeadings) {
                 $columnStyles = $this->resolveColumnStyles($export);
-                $headerStyle  = $columnStyles['header'] ?? null;
-                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($export->headings(), $headerStyle));
+                $headerStyle = $columnStyles['header'] ?? null;
+                $writer->writeRow(Row::fromValues($export->headings(), $headerStyle));
             } else {
                 // Ensure at least one row exists to avoid Excel corruption.
-                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues([' ']));
+                $writer->writeRow(Row::fromValues([' ']));
             }
         }
 
@@ -228,11 +232,11 @@ final class Exporter
 
         // --- Styles ---
         $columnStyles = $this->resolveColumnStyles($export);
-        $headerStyle  = $columnStyles['header'] ?? null;
+        $headerStyle = $columnStyles['header'] ?? null;
 
         // --- Anonymization ---
-        $shouldAnonymize      = $export instanceof WithAnonymization && (!method_exists($export, 'isAnonymizationEnabled') || $export->isAnonymizationEnabled());
-        $anonymizeColumns     = $shouldAnonymize ? $export->anonymizeColumns() : [];
+        $shouldAnonymize = $export instanceof WithAnonymization && (! method_exists($export, 'isAnonymizationEnabled') || $export->isAnonymizationEnabled());
+        $anonymizeColumns = $shouldAnonymize ? $export->anonymizeColumns() : [];
         $anonymizeReplacement = $export instanceof WithAnonymization ? $export->anonymizeReplacement() : '';
 
         // --- Stream rows ---
@@ -242,7 +246,7 @@ final class Exporter
         // If headings are explicitly provided, write them now so empty exports
         // still produce a valid Excel file with at least a header row.
         if ($export instanceof WithHeadings) {
-            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($export->headings(), $headerStyle));
+            $writer->writeRow(Row::fromValues($export->headings(), $headerStyle));
             $headingsWritten = true;
         }
 
@@ -266,19 +270,19 @@ final class Exporter
                     ? $export->headings()
                     : array_keys($row);
 
-                $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues($headings, $headerStyle));
+                $writer->writeRow(Row::fromValues($headings, $headerStyle));
                 $headingsWritten = true;
             }
 
-            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValuesWithStyles(array_values($row), null, $columnStyles));
+            $writer->writeRow(Row::fromValuesWithStyles(array_values($row), null, $columnStyles));
             $rowsWritten++;
-            
+
             if ($isDebug && $rowsWritten % 5000 === 0) {
-                \Illuminate\Support\Facades\Log::debug("TurboExcel: Processed {$rowsWritten} rows on sheet '{$title}'", [
-                    'peak_memory' => round(memory_get_peak_usage() / 1024 / 1024, 2) . 'MB',
+                Log::debug("TurboExcel: Processed {$rowsWritten} rows on sheet '{$title}'", [
+                    'peak_memory' => round(memory_get_peak_usage() / 1024 / 1024, 2).'MB',
                 ]);
             }
-            
+
             if ($this->onProgress) {
                 ($this->onProgress)();
             }
@@ -286,7 +290,7 @@ final class Exporter
 
         if (! $headingsWritten && $rowsWritten === 0) {
             // Ensure at least one row exists to avoid Excel corruption.
-            $writer->writeRow(\OpenSpout\Common\Entity\Row::fromValues([' ']));
+            $writer->writeRow(Row::fromValues([' ']));
         }
 
         return $rowsWritten;
@@ -308,9 +312,9 @@ final class Exporter
         return match (true) {
             $export instanceof FromQuery,
             $export instanceof WithQuerySplitBySheet => $export->query()->lazy($chunkSize),
-            $export instanceof FromCollection        => $export->collection(),
-            $export instanceof FromArray             => $export->array(),
-            $export instanceof FromGenerator         => $export->generator(),
+            $export instanceof FromCollection => $export->collection(),
+            $export instanceof FromArray => $export->array(),
+            $export instanceof FromGenerator => $export->generator(),
             default => throw new TurboExcelException(
                 sprintf(
                     'Export class [%s] must implement one of: FromQuery, FromCollection, FromArray, or FromGenerator.',
@@ -332,11 +336,11 @@ final class Exporter
     private function normaliseRow(mixed $item): array
     {
         return match (true) {
-            $item instanceof Model             => $item->toArray(),
+            $item instanceof Model => $item->toArray(),
             $item instanceof \JsonSerializable => (array) $item->jsonSerialize(),
-            is_array($item)                    => $item,
-            is_object($item)                   => (array) $item,
-            default                            => [$item],
+            is_array($item) => $item,
+            is_object($item) => (array) $item,
+            default => [$item],
         };
     }
 
@@ -359,7 +363,7 @@ final class Exporter
         if ($export instanceof WithColumnFormatting) {
             foreach ($export->columnFormats() as $column => $formatString) {
                 $index = $this->columnIndex($column);
-                $styles[$index] = (new Style())->setFormat($formatString);
+                $styles[$index] = (new Style)->setFormat($formatString);
             }
         }
 
@@ -368,6 +372,7 @@ final class Exporter
             foreach ($export->styles() as $column => $style) {
                 if ($column === 'header') {
                     $styles['header'] = $style;
+
                     continue;
                 }
                 $index = $this->columnIndex($column);
@@ -389,7 +394,7 @@ final class Exporter
 
         $column = strtoupper($column);
         $length = strlen($column);
-        $index  = 0;
+        $index = 0;
 
         for ($i = 0; $i < $length; $i++) {
             $index = $index * 26 + ord($column[$i]) - ord('A') + 1;
@@ -405,8 +410,8 @@ final class Exporter
     private function resolveWriter(): WriterInterface
     {
         return match ($this->format) {
-            Format::XLSX => new XlsxWriter(),
-            Format::CSV  => new CsvWriter(),
+            Format::XLSX => new XlsxWriter,
+            Format::CSV => new CsvWriter,
         };
     }
 }

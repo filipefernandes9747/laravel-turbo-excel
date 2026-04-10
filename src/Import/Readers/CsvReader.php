@@ -62,10 +62,10 @@ final class CsvReader
 
                 yield [
                     'rowIndex' => $rowIndex,
-                    'cells'    => $cells,
+                    'cells' => $cells,
                 ];
 
-                ++$rowIndex;
+                $rowIndex++;
 
                 $posAfter = ftell($handle);
                 if ($endByte !== null && $posAfter !== false && $posAfter >= $endByte) {

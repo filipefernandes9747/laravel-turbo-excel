@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace TurboExcel\Import;
 
 use Illuminate\Support\Collection;
+use TurboExcel\Import\Concerns\ToCollection;
 
 final class Result
 {
     /**
-     * @param  Collection<int, array<string, mixed>>|null  $rows  Set when the import implements {@see \TurboExcel\Import\Concerns\ToCollection}
+     * @param  Collection<int, array<string, mixed>>|null  $rows  Set when the import implements {@see ToCollection}
      */
     public function __construct(
         public readonly int $processed,

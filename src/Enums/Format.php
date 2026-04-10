@@ -7,7 +7,7 @@ namespace TurboExcel\Enums;
 enum Format: string
 {
     case XLSX = 'xlsx';
-    case CSV  = 'csv';
+    case CSV = 'csv';
 
     // ---------------------------------------------------------------------------
     // Derived properties
@@ -17,7 +17,7 @@ enum Format: string
     {
         return match ($this) {
             self::XLSX => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            self::CSV  => 'text/csv',
+            self::CSV => 'text/csv',
         };
     }
 
@@ -33,7 +33,7 @@ enum Format: string
     public static function fromExtension(string $extension): self
     {
         return match (strtolower($extension)) {
-            'csv'  => self::CSV,
+            'csv' => self::CSV,
             default => self::XLSX,
         };
     }

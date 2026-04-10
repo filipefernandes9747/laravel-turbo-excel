@@ -14,14 +14,15 @@ final class Localizer
 {
     /**
      * Download a file from a disk to a temporary local path.
-     * 
+     *
      * @return string The absolute local path to the file.
+     *
      * @throws TurboExcelException if the file cannot be downloaded.
      */
     public function localize(string $path, string $disk): string
     {
         $storage = Storage::disk($disk);
-        
+
         if (! $storage->exists($path)) {
             throw new TurboExcelException("File [{$path}] not found on disk [{$disk}].");
         }
@@ -32,7 +33,7 @@ final class Localizer
         }
 
         $extension = pathinfo($path, PATHINFO_EXTENSION);
-        $tmpPath = tempnam($dir, 'turbo-excel-import-') . ($extension ? '.' . $extension : '');
+        $tmpPath = tempnam($dir, 'turbo-excel-import-').($extension ? '.'.$extension : '');
 
         $stream = $storage->readStream($path);
         if ($stream === null) {
@@ -45,7 +46,7 @@ final class Localizer
         }
 
         stream_copy_to_stream($stream, $localStream);
-        
+
         fclose($stream);
         fclose($localStream);
 

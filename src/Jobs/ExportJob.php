@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace TurboExcel\Jobs;
 
-use TurboExcel\Enums\Format;
-use TurboExcel\TurboExcel;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,6 +11,9 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
+use TurboExcel\Enums\Format;
+use TurboExcel\Exporter;
+use TurboExcel\TurboExcel;
 
 class ExportJob implements ShouldQueue
 {
@@ -42,8 +43,8 @@ class ExportJob implements ShouldQueue
         $tmpPath = $this->getTempPath($format->extension());
 
         try {
-            $exporter = new \TurboExcel\Exporter($this->export, $format);
-            
+            $exporter = new Exporter($this->export, $format);
+
             // We can add a custom progress callback if we implement standard Events later,
             // but Laravel Batch does not natively support intra-job progress updating.
             $exporter->onProgress(function () {
@@ -80,7 +81,7 @@ class ExportJob implements ShouldQueue
             mkdir($dir, 0755, recursive: true);
         }
 
-        return $dir . DIRECTORY_SEPARATOR . uniqid('turbo-excel-job-', true) . '.' . $extension;
+        return $dir.DIRECTORY_SEPARATOR.uniqid('turbo-excel-job-', true).'.'.$extension;
     }
 
     // Helper for testing or future use

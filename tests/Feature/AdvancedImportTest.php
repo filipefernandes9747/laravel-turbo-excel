@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace TurboExcel\Tests\Feature;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
+use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Enums\Format;
 use TurboExcel\Facades\TurboExcel;
 use TurboExcel\Import\Concerns\ToCollection;
-use TurboExcel\Concerns\WithAnonymization;
+use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Scanners\XlsxQuickScanner;
 use TurboExcel\Tests\TestCase;
 
@@ -33,11 +35,24 @@ class AdvancedImportTest extends TestCase
         $path = $this->tmpPath('csv');
         file_put_contents($path, "name,email\nAlice,alice@example.com");
 
-        $import = new class implements ToCollection, \TurboExcel\Import\Concerns\WithHeaderRow, WithAnonymization {
-            public function collection(\Illuminate\Support\Collection $rows): void {}
-            public function anonymizeColumns(): array { return ['email']; }
-            public function anonymizeReplacement(): string { return '********'; }
-            public function headerRow(): int { return 1; }
+        $import = new class implements ToCollection, WithAnonymization, WithHeaderRow
+        {
+            public function collection(Collection $rows): void {}
+
+            public function anonymizeColumns(): array
+            {
+                return ['email'];
+            }
+
+            public function anonymizeReplacement(): string
+            {
+                return '********';
+            }
+
+            public function headerRow(): int
+            {
+                return 1;
+            }
         };
 
         $result = TurboExcel::import($import, $path, format: Format::CSV);
@@ -53,7 +68,7 @@ class AdvancedImportTest extends TestCase
         // For now, let's mock the scanner logic slightly or just test the ZIP peeking if we have an XLSX
         // Since we don't have a reliable way to generate a real ZIP here with dimension tag easily without a library,
         // we will at least verify it doesn't crash on invalid files.
-        $scanner = new XlsxQuickScanner();
+        $scanner = new XlsxQuickScanner;
         $this->assertNull($scanner->getRowCount('non_existent.xlsx'));
     }
 }

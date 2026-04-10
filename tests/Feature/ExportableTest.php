@@ -2,19 +2,24 @@
 
 declare(strict_types=1);
 
+use Illuminate\Foundation\Bus\PendingDispatch;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use TurboExcel\Concerns\Exportable;
 use TurboExcel\Concerns\FromArray;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Queue;
-use Symfony\Component\HttpFoundation\StreamedResponse;
-use Illuminate\Foundation\Bus\PendingDispatch;
 
 it('can download using the trait', function (): void {
-    $export = new class implements FromArray {
+    $export = new class implements FromArray
+    {
         use Exportable;
-        public function array(): array { return [['data' => 1]]; }
+
+        public function array(): array
+        {
+            return [['data' => 1]];
+        }
     };
-    
+
     $response = $export->download('users.xlsx');
 
     expect($response)->toBeInstanceOf(StreamedResponse::class)
@@ -23,12 +28,17 @@ it('can download using the trait', function (): void {
 
 it('can store using the trait', function (): void {
     Storage::fake('local');
-    
-    $export = new class implements FromArray {
+
+    $export = new class implements FromArray
+    {
         use Exportable;
-        public function array(): array { return [['data' => 1]]; }
+
+        public function array(): array
+        {
+            return [['data' => 1]];
+        }
     };
-    
+
     $path = $export->store('exported_users.xlsx');
 
     expect($path)->toBe('exported_users.xlsx');
@@ -38,22 +48,32 @@ it('can store using the trait', function (): void {
 it('can queue using the trait', function (): void {
     Queue::fake();
 
-    $export = new class implements FromArray {
+    $export = new class implements FromArray
+    {
         use Exportable;
-        public function array(): array { return [['data' => 1]]; }
+
+        public function array(): array
+        {
+            return [['data' => 1]];
+        }
     };
-    
+
     $pendingDispatch = $export->queue('queued_users.xlsx');
 
     expect($pendingDispatch)->toBeInstanceOf(PendingDispatch::class);
 });
 
 it('can stream using the trait', function (): void {
-    $export = new class implements FromArray {
+    $export = new class implements FromArray
+    {
         use Exportable;
-        public function array(): array { return [['data' => 1]]; }
+
+        public function array(): array
+        {
+            return [['data' => 1]];
+        }
     };
-    
+
     $response = $export->stream('streamed_users.csv');
 
     expect($response)->toBeInstanceOf(StreamedResponse::class)
@@ -62,12 +82,17 @@ it('can stream using the trait', function (): void {
 
 it('can export using the trait', function (): void {
     $path = tmpPath('xlsx');
-    
-    $export = new class implements FromArray {
+
+    $export = new class implements FromArray
+    {
         use Exportable;
-        public function array(): array { return [['data' => 1]]; }
+
+        public function array(): array
+        {
+            return [['data' => 1]];
+        }
     };
-    
+
     $returnedPath = $export->export($path);
 
     expect($returnedPath)->toBe($path)

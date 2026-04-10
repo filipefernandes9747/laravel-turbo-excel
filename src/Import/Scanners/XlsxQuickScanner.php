@@ -13,7 +13,7 @@ final class XlsxQuickScanner
 {
     /**
      * Get the row count of a specific sheet in an XLSX file.
-     * 
+     *
      * @param  int  $sheetIndex  0-based sheet index.
      * @return int|null Row count if found, null otherwise.
      */
@@ -23,7 +23,7 @@ final class XlsxQuickScanner
             return null;
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($path) !== true) {
             return null;
         }
@@ -31,7 +31,7 @@ final class XlsxQuickScanner
         // Worksheet XML files are typically at xl/worksheets/sheetN.xml
         // The index might not match exactly if sheets were deleted/renamed,
         // but for a fresh scan, this is the most common path.
-        $entryName = "xl/worksheets/sheet" . ($sheetIndex + 1) . ".xml";
+        $entryName = 'xl/worksheets/sheet'.($sheetIndex + 1).'.xml';
         $xmlContent = $zip->getFromName($entryName);
         $zip->close();
 

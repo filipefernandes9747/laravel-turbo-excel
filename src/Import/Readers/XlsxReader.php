@@ -21,7 +21,7 @@ final class XlsxReader
      */
     public function rows(string $path, ?XlsxReadSegment $segment = null): \Generator
     {
-        $reader = new Reader();
+        $reader = new Reader;
         $reader->open($path);
 
         $targetSheetIndex = $segment?->sheetIndex ?? 0;
@@ -30,7 +30,7 @@ final class XlsxReader
         try {
             foreach ($reader->getSheetIterator() as $sheet) {
                 if ($currentSheetIndex !== $targetSheetIndex) {
-                    ++$currentSheetIndex;
+                    $currentSheetIndex++;
 
                     continue;
                 }
@@ -38,7 +38,7 @@ final class XlsxReader
                 $rowIndex = 0;
 
                 foreach ($sheet->getRowIterator() as $row) {
-                    ++$rowIndex;
+                    $rowIndex++;
 
                     if ($segment !== null) {
                         if ($rowIndex < $segment->startRow) {
@@ -51,7 +51,7 @@ final class XlsxReader
 
                     yield [
                         'rowIndex' => $rowIndex,
-                        'cells'    => self::indexedCells($row),
+                        'cells' => self::indexedCells($row),
                     ];
                 }
 

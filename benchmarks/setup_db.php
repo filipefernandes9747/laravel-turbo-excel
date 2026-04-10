@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__.'/vendor/autoload.php';
 
-use Orchestra\Testbench\Foundation\Application;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Orchestra\Testbench\Foundation\Application;
 
 if ($argc < 2) {
     echo "Usage: php setup_db.php <rows>\n";
@@ -20,11 +20,11 @@ $app = Application::create(basePath: __DIR__);
 $app['config']->set('database.default', 'sqlite');
 $app['config']->set('database.connections.sqlite', [
     'driver' => 'sqlite',
-    'database' => __DIR__ . '/database.sqlite',
+    'database' => __DIR__.'/database.sqlite',
     'prefix' => '',
 ]);
 
-$dbPath = __DIR__ . '/database.sqlite';
+$dbPath = __DIR__.'/database.sqlite';
 file_put_contents($dbPath, '');
 
 Schema::create('users', function (Blueprint $table) {
@@ -43,7 +43,7 @@ while ($inserted < $rows) {
     for ($i = 1; $i <= $insertSize; $i++) {
         $idx = $inserted + $i;
         $data[] = [
-            'name' => 'User ' . $idx,
+            'name' => 'User '.$idx,
             'email' => "user{$idx}@example.com",
             'status' => $idx % 2 === 0 ? 'active' : 'inactive',
             'created_at' => '2023-10-01 10:00:00',

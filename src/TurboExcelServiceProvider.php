@@ -11,7 +11,7 @@ class TurboExcelServiceProvider extends ServiceProvider
     public function register(): void
     {
         // Bind as a singleton so the Facade always resolves the same instance.
-        $this->app->singleton(TurboExcel::class, fn () => new TurboExcel());
+        $this->app->singleton(TurboExcel::class, fn () => new TurboExcel);
     }
 
     public function boot(): void

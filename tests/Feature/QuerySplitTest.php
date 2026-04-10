@@ -2,17 +2,18 @@
 
 declare(strict_types=1);
 
-use TurboExcel\Concerns\WithQuerySplitBySheet;
+use Illuminate\Database\Query\Builder;
+use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithMapping;
+use TurboExcel\Concerns\WithQuerySplitBySheet;
 use TurboExcel\Concerns\WithTitle;
+use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\Facades\TurboExcel;
-use Illuminate\Support\Facades\DB;
-use OpenSpout\Reader\XLSX\Reader as XlsxReader;
 
 function readXlsxSheetsForSplit(string $path): array
 {
-    $reader = new XlsxReader();
+    $reader = new XlsxReader;
     $reader->open($path);
 
     $sheets = [];
@@ -31,7 +32,7 @@ function readXlsxSheetsForSplit(string $path): array
 
 function tmpPathForSplit(string $extension = 'xlsx'): string
 {
-    return sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('turbo-excel-test-', true) . '.' . $extension;
+    return sys_get_temp_dir().DIRECTORY_SEPARATOR.uniqid('turbo-excel-test-', true).'.'.$extension;
 }
 
 describe('WithQuerySplitBySheet', function (): void {
@@ -44,31 +45,39 @@ describe('WithQuerySplitBySheet', function (): void {
             (object) ['category' => 'C', 'name' => 'Cherry'],
         ]);
 
-        $mockQuery = Mockery::mock(Illuminate\Database\Query\Builder::class);
+        $mockQuery = Mockery::mock(Builder::class);
         $mockQuery->shouldReceive('lazy')->andReturn($data);
 
-        $export = new class($mockQuery) implements WithQuerySplitBySheet, WithHeadings, WithTitle {
+        $export = new class($mockQuery) implements WithHeadings, WithQuerySplitBySheet, WithTitle
+        {
             private string $currentTitle = '';
+
             public function __construct(private $mockQuery) {}
 
-            public function query() {
+            public function query()
+            {
                 return $this->mockQuery;
             }
 
-            public function splitByColumn(): string {
+            public function splitByColumn(): string
+            {
                 return 'category';
             }
 
-            public function sheet(mixed $row): object {
-                $this->currentTitle = 'Category ' . $row->category;
+            public function sheet(mixed $row): object
+            {
+                $this->currentTitle = 'Category '.$row->category;
+
                 return $this;
             }
 
-            public function title(): string {
+            public function title(): string
+            {
                 return $this->currentTitle;
             }
 
-            public function headings(): array {
+            public function headings(): array
+            {
                 return ['ID', 'Category', 'Product Name'];
             }
         };
@@ -92,27 +101,62 @@ describe('WithQuerySplitBySheet', function (): void {
             (object) ['type' => 'B', 'name' => 'Banana'],
         ]);
 
-        $mockQuery = Mockery::mock(Illuminate\Database\Query\Builder::class);
+        $mockQuery = Mockery::mock(Builder::class);
         $mockQuery->shouldReceive('lazy')->andReturn($data);
 
         // Define two different sheet classes
-        $sheetA = new class implements WithTitle, WithHeadings, WithMapping {
-            public function title(): string   { return 'Title A'; }
-            public function headings(): array { return ['Header A']; }
-            public function map($row): array  { return ['Mapped A: ' . $row->name]; }
+        $sheetA = new class implements WithHeadings, WithMapping, WithTitle
+        {
+            public function title(): string
+            {
+                return 'Title A';
+            }
+
+            public function headings(): array
+            {
+                return ['Header A'];
+            }
+
+            public function map($row): array
+            {
+                return ['Mapped A: '.$row->name];
+            }
         };
 
-        $sheetB = new class implements WithTitle, WithHeadings, WithMapping {
-            public function title(): string   { return 'Title B'; }
-            public function headings(): array { return ['Header B']; }
-            public function map($row): array  { return ['Mapped B: ' . $row->name]; }
+        $sheetB = new class implements WithHeadings, WithMapping, WithTitle
+        {
+            public function title(): string
+            {
+                return 'Title B';
+            }
+
+            public function headings(): array
+            {
+                return ['Header B'];
+            }
+
+            public function map($row): array
+            {
+                return ['Mapped B: '.$row->name];
+            }
         };
 
-        $export = new class($mockQuery, $sheetA, $sheetB) implements WithQuerySplitBySheet {
+        $export = new class($mockQuery, $sheetA, $sheetB) implements WithQuerySplitBySheet
+        {
             public function __construct(private $mockQuery, private $sheetA, private $sheetB) {}
-            public function query() { return $this->mockQuery; }
-            public function splitByColumn(): string { return 'type'; }
-            public function sheet(mixed $row): object {
+
+            public function query()
+            {
+                return $this->mockQuery;
+            }
+
+            public function splitByColumn(): string
+            {
+                return 'type';
+            }
+
+            public function sheet(mixed $row): object
+            {
                 return $row->type === 'A' ? $this->sheetA : $this->sheetB;
             }
         };
@@ -134,18 +178,31 @@ describe('WithQuerySplitBySheet', function (): void {
     });
 
     it('throws an exception for CSV format', function (): void {
-        $mockQuery = Mockery::mock(Illuminate\Database\Query\Builder::class);
-        
-        $export = new class($mockQuery) implements WithQuerySplitBySheet {
+        $mockQuery = Mockery::mock(Builder::class);
+
+        $export = new class($mockQuery) implements WithQuerySplitBySheet
+        {
             public function __construct(private $mockQuery) {}
-            public function query() { return $this->mockQuery; }
-            public function splitByColumn(): string { return 'type'; }
-            public function sheet(mixed $row): object { return $this; }
+
+            public function query()
+            {
+                return $this->mockQuery;
+            }
+
+            public function splitByColumn(): string
+            {
+                return 'type';
+            }
+
+            public function sheet(mixed $row): object
+            {
+                return $this;
+            }
         };
 
         $path = tmpPathForSplit('csv');
 
         expect(fn () => TurboExcel::export($export, $path))
-            ->toThrow(\TurboExcel\Exceptions\TurboExcelException::class, 'only supported for XLSX exports');
+            ->toThrow(TurboExcelException::class, 'only supported for XLSX exports');
     });
 });

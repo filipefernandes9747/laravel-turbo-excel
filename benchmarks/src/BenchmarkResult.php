@@ -8,10 +8,10 @@ final class BenchmarkResult
 {
     public function __construct(
         public readonly string $label,
-        public readonly int    $rows,
-        public readonly float  $timeSeconds,
-        public readonly int    $peakMemoryBytes,
-        public readonly int    $fileSizeBytes,
+        public readonly int $rows,
+        public readonly float $timeSeconds,
+        public readonly int $peakMemoryBytes,
+        public readonly int $fileSizeBytes,
     ) {}
 
     public function timeMs(): float

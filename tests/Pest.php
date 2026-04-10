@@ -16,5 +16,5 @@ uses(TestCase::class)->in('Feature');
  */
 function tmpPath(string $extension = 'xlsx'): string
 {
-    return sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('turbo-excel-test-', true) . '.' . $extension;
+    return sys_get_temp_dir().DIRECTORY_SEPARATOR.uniqid('turbo-excel-test-', true).'.'.$extension;
 }

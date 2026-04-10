@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__.'/vendor/autoload.php';
 
-use Orchestra\Testbench\Foundation\Application;
-use TurboExcel\TurboExcelServiceProvider;
-use Maatwebsite\Excel\ExcelServiceProvider;
-use Benchmarks\TurboExport;
 use Benchmarks\MaatExport;
-use Benchmarks\TurboQueryExport;
 use Benchmarks\MaatQueryExport;
-use TurboExcel\Facades\TurboExcel;
+use Benchmarks\TurboExport;
+use Benchmarks\TurboQueryExport;
+use Maatwebsite\Excel\ExcelServiceProvider;
 use Maatwebsite\Excel\Facades\Excel;
+use Orchestra\Testbench\Foundation\Application;
+use TurboExcel\Facades\TurboExcel;
+use TurboExcel\TurboExcelServiceProvider;
 
 if ($argc < 4) {
     echo "Usage: php bench.php <package> <rows> <type>\n";
@@ -31,7 +31,7 @@ if ($type === 'query') {
     $app['config']->set('database.default', 'sqlite');
     $app['config']->set('database.connections.sqlite', [
         'driver' => 'sqlite',
-        'database' => __DIR__ . '/database.sqlite',
+        'database' => __DIR__.'/database.sqlite',
         'prefix' => '',
     ]);
 }
@@ -39,7 +39,7 @@ if ($type === 'query') {
 $app->register(TurboExcelServiceProvider::class);
 $app->register(ExcelServiceProvider::class);
 
-$path = __DIR__ . '/output_' . $package . '_' . $rows . '.xlsx';
+$path = __DIR__.'/output_'.$package.'_'.$rows.'.xlsx';
 if (file_exists($path)) {
     unlink($path);
 }
@@ -50,19 +50,19 @@ $timeStart = microtime(true);
 
 try {
     if ($package === 'turbo') {
-        $export = $type === 'query' ? new TurboQueryExport() : new TurboExport($rows);
+        $export = $type === 'query' ? new TurboQueryExport : new TurboExport($rows);
         TurboExcel::export($export, $path);
     } else {
-        $export = $type === 'query' ? new MaatQueryExport() : new MaatExport($rows);
-        Excel::store($export, 'output_' . $package . '_' . $rows . '.xlsx', 'local');
-        $storagePath = storage_path('app/output_' . $package . '_' . $rows . '.xlsx');
+        $export = $type === 'query' ? new MaatQueryExport : new MaatExport($rows);
+        Excel::store($export, 'output_'.$package.'_'.$rows.'.xlsx', 'local');
+        $storagePath = storage_path('app/output_'.$package.'_'.$rows.'.xlsx');
         if (file_exists($storagePath)) {
             rename($storagePath, $path);
         }
     }
-} catch (\Throwable $e) {
+} catch (Throwable $e) {
     echo json_encode([
-        'error' => $e->getMessage()
+        'error' => $e->getMessage(),
     ]);
     exit(1);
 }

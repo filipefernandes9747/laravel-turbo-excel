@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace TurboExcel\Tests;
 
-use TurboExcel\TurboExcelServiceProvider;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use TurboExcel\Facades\TurboExcel;
+use TurboExcel\TurboExcelServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
@@ -17,7 +18,7 @@ abstract class TestCase extends OrchestraTestCase
     protected function getPackageAliases($app): array
     {
         return [
-            'TurboExcel' => \TurboExcel\Facades\TurboExcel::class,
+            'TurboExcel' => TurboExcel::class,
         ];
     }
 
@@ -26,9 +27,9 @@ abstract class TestCase extends OrchestraTestCase
         // Setup default database to use sqlite :memory:
         $app['config']->set('database.default', 'testing');
         $app['config']->set('database.connections.testing', [
-            'driver'   => 'sqlite',
+            'driver' => 'sqlite',
             'database' => ':memory:',
-            'prefix'   => '',
+            'prefix' => '',
         ]);
     }
 
@@ -42,6 +43,6 @@ abstract class TestCase extends OrchestraTestCase
      */
     protected function tmpPath(string $extension = 'xlsx'): string
     {
-        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('turbo-excel-test-', true) . '.' . $extension;
+        return sys_get_temp_dir().DIRECTORY_SEPARATOR.uniqid('turbo-excel-test-', true).'.'.$extension;
     }
 }

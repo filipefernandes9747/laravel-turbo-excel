@@ -27,13 +27,13 @@ final class HeaderProcessor
             }
 
             if ($label === '') {
-                $label = 'column_' . ($i + 1);
+                $label = 'column_'.($i + 1);
             }
 
             $base = $label;
             $count = $seen[$base] ?? 0;
             if ($count > 0) {
-                $label = $base . '_' . $count;
+                $label = $base.'_'.$count;
             }
             $seen[$base] = $count + 1;
 

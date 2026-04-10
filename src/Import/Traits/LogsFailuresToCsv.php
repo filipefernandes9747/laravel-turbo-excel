@@ -14,7 +14,7 @@ trait LogsFailuresToCsv
     public function onFailure(array $row, \Throwable $e): void
     {
         $path = $this->failuresExportPath();
-        
+
         // Make sure the directory exists
         $dir = dirname($path);
         if (! is_dir($dir)) {

@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace TurboExcel\Import;
 
+use OpenSpout\Reader\XLSX\Reader;
 use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Readers\CsvReader;
+use TurboExcel\Import\Readers\XlsxReader;
+use TurboExcel\Import\Scanners\XlsxQuickScanner;
 use TurboExcel\Import\Segments\CsvReadSegment;
 use TurboExcel\Import\Segments\XlsxReadSegment;
-use TurboExcel\Import\Scanners\XlsxQuickScanner;
 
 final class ImportScanner
 {
@@ -34,7 +36,7 @@ final class ImportScanner
     public function scan(): ImportScan
     {
         return match ($this->format) {
-            Format::CSV  => $this->scanCsv(),
+            Format::CSV => $this->scanCsv(),
             Format::XLSX => $this->scanXlsx(),
         };
     }
@@ -73,7 +75,7 @@ final class ImportScanner
                 }
 
                 if ($this->isCsvRecordEmpty($line)) {
-                    ++$rowNum;
+                    $rowNum++;
 
                     continue;
                 }
@@ -83,13 +85,13 @@ final class ImportScanner
                     $cells = $this->normalizeCsvLine($line);
                     HeaderProcessor::validateHeaders($cells, $this->import);
                     $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
-                    ++$rowNum;
+                    $rowNum++;
 
                     continue;
                 }
 
                 if ($headerRow !== null && $rowNum < $headerRow) {
-                    ++$rowNum;
+                    $rowNum++;
 
                     continue;
                 }
@@ -99,8 +101,8 @@ final class ImportScanner
                     $segmentRowNumbers[] = $rowNum;
                 }
 
-                ++$dataCount;
-                ++$rowNum;
+                $dataCount++;
+                $rowNum++;
             }
 
             if ($dataCount === 0) {
@@ -143,14 +145,14 @@ final class ImportScanner
         $dataCount = 0;
         $lastDataRow = null;
 
-        $quickScanner = new XlsxQuickScanner();
+        $quickScanner = new XlsxQuickScanner;
         $quickRowCount = $quickScanner->getRowCount($this->path, $this->xlsxSheetIndex ?? 0);
 
         if ($quickRowCount !== null) {
             return $this->fastScanXlsx($quickRowCount, $headerRow);
         }
 
-        $openSpout = new \OpenSpout\Reader\XLSX\Reader();
+        $openSpout = new Reader;
         $openSpout->open($this->path);
 
         try {
@@ -160,7 +162,7 @@ final class ImportScanner
             foreach ($openSpout->getSheetIterator() as $sheet) {
                 if ($sheetIndexTarget !== null) {
                     if ($currentSheetIndex !== $sheetIndexTarget) {
-                        ++$currentSheetIndex;
+                        $currentSheetIndex++;
 
                         continue;
                     }
@@ -171,10 +173,10 @@ final class ImportScanner
                 $rowIndex = 0;
 
                 foreach ($sheet->getRowIterator() as $row) {
-                    ++$rowIndex;
+                    $rowIndex++;
 
                     if ($headerRow !== null && $rowIndex === $headerRow) {
-                        $cells = \TurboExcel\Import\Readers\XlsxReader::indexedCells($row);
+                        $cells = XlsxReader::indexedCells($row);
                         HeaderProcessor::validateHeaders($cells, $this->import);
                         $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
 
@@ -189,7 +191,7 @@ final class ImportScanner
                         $segmentStarts[] = $rowIndex;
                     }
 
-                    ++$dataCount;
+                    $dataCount++;
                     $lastDataRow = $rowIndex;
                 }
 
@@ -238,7 +240,7 @@ final class ImportScanner
         $headerKeys = null;
 
         if ($headerRow !== null) {
-            $openSpout = new \OpenSpout\Reader\XLSX\Reader();
+            $openSpout = new Reader;
             $openSpout->open($this->path);
 
             try {
@@ -248,7 +250,7 @@ final class ImportScanner
                 foreach ($openSpout->getSheetIterator() as $sheet) {
                     if ($sheetIndexTarget !== null) {
                         if ($currentSheetIndex !== $sheetIndexTarget) {
-                            ++$currentSheetIndex;
+                            $currentSheetIndex++;
 
                             continue;
                         }
@@ -259,7 +261,7 @@ final class ImportScanner
                     $rowIndex = 0;
                     foreach ($sheet->getRowIterator() as $row) {
                         if (++$rowIndex === $headerRow) {
-                            $cells = \TurboExcel\Import\Readers\XlsxReader::indexedCells($row);
+                            $cells = XlsxReader::indexedCells($row);
                             HeaderProcessor::validateHeaders($cells, $this->import);
                             $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
 
