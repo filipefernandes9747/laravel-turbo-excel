@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use TurboExcel\Enums\Format;
+use TurboExcel\Import\Localizer;
 use TurboExcel\Import\SegmentImporter;
 use TurboExcel\Import\Segments\CsvReadSegment;
 use TurboExcel\Import\Segments\XlsxReadSegment;
@@ -33,6 +34,8 @@ class ProcessChunkJob implements ShouldQueue
         public CsvReadSegment|XlsxReadSegment $segment,
         public ?array $headerKeys,
         public string $aggregateKey,
+        public int $totalRows,
+        public ?string $disk = null,
     ) {}
 
     public function handle(): void
@@ -41,13 +44,24 @@ class ProcessChunkJob implements ShouldQueue
             return;
         }
 
-        (new SegmentImporter())->run(
-            $this->import,
-            $this->filePath,
-            $this->format,
-            $this->segment,
-            $this->headerKeys,
-            $this->aggregateKey,
-        );
+        $localizer = new Localizer();
+        $isRemote = $this->disk !== null;
+        $workingPath = $isRemote ? $localizer->localize($this->filePath, $this->disk) : $this->filePath;
+
+        try {
+            (new SegmentImporter())->run(
+                $this->import,
+                $workingPath,
+                $this->format,
+                $this->segment,
+                $this->headerKeys,
+                $this->aggregateKey,
+                $this->totalRows,
+            );
+        } finally {
+            if ($isRemote) {
+                $localizer->cleanup($workingPath);
+            }
+        }
     }
 }

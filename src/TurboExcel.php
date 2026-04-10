@@ -132,9 +132,9 @@ class TurboExcel
      * {@see ImportResult::$rows} holds mapped, validated rows when the import implements
      * {@see \TurboExcel\Import\Concerns\ToCollection}.
      */
-    public function import(object $import, string $path, ?Format $format = null): ImportResult|Batch
+    public function import(object $import, string $path, ?string $disk = null, ?Format $format = null): ImportResult|Batch
     {
-        return (new ImportOrchestrator())->import($import, $path, $format);
+        return (new ImportOrchestrator())->import($import, $path, $disk, $format);
     }
 
     // ---------------------------------------------------------------------------

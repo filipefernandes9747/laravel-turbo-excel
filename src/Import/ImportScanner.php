@@ -12,6 +12,7 @@ use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Readers\CsvReader;
 use TurboExcel\Import\Segments\CsvReadSegment;
 use TurboExcel\Import\Segments\XlsxReadSegment;
+use TurboExcel\Import\Scanners\XlsxQuickScanner;
 
 final class ImportScanner
 {
@@ -56,6 +57,8 @@ final class ImportScanner
 
             /** @var list<int> $segmentStarts */
             $segmentStarts = [];
+            /** @var list<int> $segmentRowNumbers */
+            $segmentRowNumbers = [];
             $dataCount = 0;
 
             while (! feof($handle)) {
@@ -93,6 +96,7 @@ final class ImportScanner
 
                 if ($dataCount % $this->chunkSize === 0) {
                     $segmentStarts[] = (int) $posBefore;
+                    $segmentRowNumbers[] = $rowNum;
                 }
 
                 ++$dataCount;
@@ -100,12 +104,12 @@ final class ImportScanner
             }
 
             if ($dataCount === 0) {
-                return new ImportScan($headerKeys, []);
+                return new ImportScan($headerKeys, [], 0);
             }
 
-            $segments = $this->buildCsvSegments($segmentStarts);
+            $segments = $this->buildCsvSegments($segmentStarts, $segmentRowNumbers);
 
-            return new ImportScan($headerKeys, $segments);
+            return new ImportScan($headerKeys, $segments, $dataCount);
         } finally {
             fclose($handle);
         }
@@ -113,16 +117,17 @@ final class ImportScanner
 
     /**
      * @param  list<int>  $starts
+     * @param  list<int>  $rowNumbers
      * @return list<CsvReadSegment>
      */
-    private function buildCsvSegments(array $starts): array
+    private function buildCsvSegments(array $starts, array $rowNumbers): array
     {
         $segments = [];
         $n = count($starts);
         for ($i = 0; $i < $n; $i++) {
             $start = $starts[$i];
             $end = isset($starts[$i + 1]) ? $starts[$i + 1] : null;
-            $segments[] = new CsvReadSegment($start, $end);
+            $segments[] = new CsvReadSegment($start, $end, $rowNumbers[$i]);
         }
 
         return $segments;
@@ -137,6 +142,13 @@ final class ImportScanner
         $segmentStarts = [];
         $dataCount = 0;
         $lastDataRow = null;
+
+        $quickScanner = new XlsxQuickScanner();
+        $quickRowCount = $quickScanner->getRowCount($this->path, $this->xlsxSheetIndex ?? 0);
+
+        if ($quickRowCount !== null) {
+            return $this->fastScanXlsx($quickRowCount, $headerRow);
+        }
 
         $openSpout = new \OpenSpout\Reader\XLSX\Reader();
         $openSpout->open($this->path);
@@ -188,7 +200,7 @@ final class ImportScanner
         }
 
         if ($dataCount === 0) {
-            return new ImportScan($headerKeys, []);
+            return new ImportScan($headerKeys, [], 0);
         }
 
         $segments = $this->buildXlsxSegments(
@@ -197,7 +209,7 @@ final class ImportScanner
             $this->xlsxSheetIndex ?? 0,
         );
 
-        return new ImportScan($headerKeys, $segments);
+        return new ImportScan($headerKeys, $segments, $dataCount);
     }
 
     /**
@@ -219,6 +231,68 @@ final class ImportScanner
         }
 
         return $segments;
+    }
+
+    private function fastScanXlsx(int $totalRows, ?int $headerRow): ImportScan
+    {
+        $headerKeys = null;
+
+        if ($headerRow !== null) {
+            $openSpout = new \OpenSpout\Reader\XLSX\Reader();
+            $openSpout->open($this->path);
+
+            try {
+                $sheetIndexTarget = $this->xlsxSheetIndex;
+                $currentSheetIndex = 0;
+
+                foreach ($openSpout->getSheetIterator() as $sheet) {
+                    if ($sheetIndexTarget !== null) {
+                        if ($currentSheetIndex !== $sheetIndexTarget) {
+                            ++$currentSheetIndex;
+
+                            continue;
+                        }
+                    } elseif ($currentSheetIndex > 0) {
+                        break;
+                    }
+
+                    $rowIndex = 0;
+                    foreach ($sheet->getRowIterator() as $row) {
+                        if (++$rowIndex === $headerRow) {
+                            $cells = \TurboExcel\Import\Readers\XlsxReader::indexedCells($row);
+                            HeaderProcessor::validateHeaders($cells, $this->import);
+                            $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
+
+                            break;
+                        }
+                    }
+
+                    break;
+                }
+            } finally {
+                $openSpout->close();
+            }
+        }
+
+        $firstDataRow = $headerRow !== null ? $headerRow + 1 : 1;
+        $dataCount = max(0, $totalRows - $firstDataRow + 1);
+
+        if ($dataCount === 0) {
+            return new ImportScan($headerKeys, [], 0);
+        }
+
+        $segmentStarts = [];
+        for ($i = 0; $i < $dataCount; $i += $this->chunkSize) {
+            $segmentStarts[] = $firstDataRow + $i;
+        }
+
+        $segments = $this->buildXlsxSegments(
+            $segmentStarts,
+            $totalRows,
+            $this->xlsxSheetIndex ?? 0,
+        );
+
+        return new ImportScan($headerKeys, $segments, $dataCount);
     }
 
     /**

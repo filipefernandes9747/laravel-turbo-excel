@@ -18,10 +18,12 @@ use TurboExcel\Import\Concerns\WithChunkReading;
 use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Concerns\WithLimit;
 use TurboExcel\Import\Concerns\WithMetrics;
+use TurboExcel\Import\Concerns\WithProgress;
 use TurboExcel\Import\Concerns\WithStartRow;
 use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Traits\Importable;
 use TurboExcel\Import\Traits\RemembersRowNumber as RemembersRowNumberTrait;
+use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Pipeline\ModelProcessor;
 use TurboExcel\Import\Pipeline\RowMapper;
@@ -47,6 +49,7 @@ final class SegmentImporter
         CsvReadSegment|XlsxReadSegment|null $segment,
         ?array $headerKeys,
         ?string $aggregateKey = null,
+        int $totalRows = 0,
     ): Result {
         $resolvedKeys = $headerKeys;
         $processed = 0;
@@ -107,6 +110,10 @@ final class SegmentImporter
                 $mapped = RowMapper::map($import, $rowForPipeline);
                 $data = $this->normalizeKeysForLaravel($mapped);
 
+                if ($import instanceof WithAnonymization) {
+                    $data = $this->anonymizeRow($data, $import);
+                }
+
                 RowValidator::validate($import, $data);
                 $models->persist($data);
                 if ($rows !== null) {
@@ -156,6 +163,15 @@ final class SegmentImporter
         if ($aggregateKey !== null) {
             Cache::increment("turbo_excel_import:{$aggregateKey}:processed", $result->processed);
             Cache::increment("turbo_excel_import:{$aggregateKey}:failed", $result->failed);
+
+            if ($import instanceof WithProgress && $totalRows > 0) {
+                $globalProcessed = (int) Cache::get("turbo_excel_import:{$aggregateKey}:processed", 0);
+                $percentage = (int) min(100, round(($globalProcessed / $totalRows) * 100));
+                Cache::put($import->progressKey(), $percentage, 3600);
+            }
+        } elseif ($import instanceof WithProgress && $totalRows > 0) {
+            $percentage = (int) min(100, round(($processed / $totalRows) * 100));
+            Cache::put($import->progressKey(), $percentage, 3600);
         }
 
         if ($metricsEnabled) {
@@ -223,7 +239,7 @@ final class SegmentImporter
                 ? $segment
                 : new CsvReadSegment(0, null);
 
-            yield from $csvReader->rows($seg->startByte, $seg->endByte);
+            yield from $csvReader->iterateByByteOffset($seg->startByte, $seg->endByte, $seg->startRowIndex);
 
             return;
         }
@@ -233,6 +249,24 @@ final class SegmentImporter
             : new XlsxReadSegment(1, self::XLSX_MAX_PHYSICAL_ROW, 0);
 
         yield from $xlsxReader->rows($path, $xlsxSeg);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function anonymizeRow(array $row, WithAnonymization $import): array
+    {
+        $columns = $import->anonymizeColumns();
+        $replacement = $import->anonymizeReplacement();
+
+        foreach ($columns as $column) {
+            if (array_key_exists($column, $row)) {
+                $row[$column] = $replacement;
+            }
+        }
+
+        return $row;
     }
 
     private function makeCsvReader(object $import, string $path): CsvReader

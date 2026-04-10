@@ -16,5 +16,6 @@ final class ImportScan
     public function __construct(
         public readonly ?array $headerKeys,
         public readonly array $segments,
+        public readonly int $totalRows,
     ) {}
 }

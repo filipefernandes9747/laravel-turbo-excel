@@ -24,12 +24,14 @@ use TurboExcel\Import\Concerns\WithHeaderValidation;
 use TurboExcel\Import\Concerns\WithMapping;
 use TurboExcel\Import\Concerns\OnEachChunk;
 use TurboExcel\Import\Concerns\OnEachRow;
+use TurboExcel\Import\Concerns\ShouldQueue;
 use TurboExcel\Import\Concerns\WithNormalizedHeaders;
 use TurboExcel\Import\Concerns\WithUpserts;
 use TurboExcel\Import\Concerns\WithUpsertColumns;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
 use TurboExcel\Import\Concerns\WithLimit;
 use TurboExcel\Import\Concerns\WithMetrics;
+use TurboExcel\Import\Concerns\WithProgress;
 use TurboExcel\Import\Concerns\WithStartRow;
 use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Traits\Importable;
@@ -38,6 +40,7 @@ use TurboExcel\Import\Traits\RemembersRowNumber as RemembersRowNumberTrait;
 use TurboExcel\Import\Concerns\WithValidation;
 use TurboExcel\Import\Readers\CsvReader;
 use TurboExcel\Import\Result;
+use TurboExcel\Import\SegmentImporter;
 use TurboExcel\TurboExcel as TurboExcelService;
 
 beforeEach(function (): void {
@@ -929,6 +932,56 @@ describe('Advanced Features', function (): void {
         };
 
         $import->withMetrics()->import($path, Format::CSV);
-        expect(true)->toBeTrue();
+    });
+
+    it('tracks percentage progress with WithProgress interface', function (): void {
+        $path = tmpPath('csv');
+        file_put_contents($path, "A\nB\nC\nD\n");
+
+        $import = new class implements OnEachRow, WithProgress
+        {
+            public function progressKey(): string { return 'test-progress'; }
+            public function onRow(array $row): void {}
+        };
+
+        Cache::forget('test-progress');
+
+        TurboExcel::import($import, $path, Format::CSV);
+
+        // SegmentImporter updates progress at the end of the run
+        // In sync mode, it should be 100% after completion
+        expect(Cache::get('test-progress'))->toBe(100);
+    });
+
+    it('tracks partial percentage for queued imports', function (): void {
+        $path = tmpPath('csv');
+        // 4 rows, 1 char each + \n
+        file_put_contents($path, "a\nb\nc\nd\n");
+
+        $import = new class implements OnEachRow, WithProgress, WithChunkReading, ShouldQueue
+        {
+            public function progressKey(): string { return 'queue-progress'; }
+            public function chunkSize(): int { return 2; }
+            public function onRow(array $row): void {}
+        };
+
+        Cache::forget('queue-progress');
+
+        $scan = (new \TurboExcel\Import\ImportScanner($import, $path, Format::CSV, 2))->scan();
+        $segments = $scan->segments;
+        $totalRows = $scan->totalRows;
+
+        $aggregateKey = 'test-agg';
+        Cache::put("turbo_excel_import:{$aggregateKey}:processed", 0);
+
+        $importer = new SegmentImporter();
+
+        // Chunk 1
+        $importer->run($import, $path, Format::CSV, $segments[0], null, $aggregateKey, $totalRows);
+        expect(Cache::get('queue-progress'))->toBe(50);
+
+        // Chunk 2
+        $importer->run($import, $path, Format::CSV, $segments[1], null, $aggregateKey, $totalRows);
+        expect(Cache::get('queue-progress'))->toBe(100);
     });
 });

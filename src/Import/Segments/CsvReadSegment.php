@@ -13,6 +13,7 @@ final class CsvReadSegment
     public function __construct(
         public readonly int $startByte,
         public readonly ?int $endByte = null,
+        public readonly int $startRowIndex = 1,
     ) {
         if ($this->startByte < 0) {
             throw new \InvalidArgumentException('startByte must be >= 0.');

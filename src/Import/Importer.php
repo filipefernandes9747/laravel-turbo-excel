@@ -42,28 +42,39 @@ final class Importer
     /**
      * @return Result|Batch
      */
-    public function import(object $import, string $path, ?Format $format = null): Result|Batch
+    public function import(object $import, string $path, ?string $disk = null, ?Format $format = null): Result|Batch
     {
         $format ??= Format::fromFilename($path);
-        $resolved = realpath($path);
-        if ($resolved === false || ! is_readable($resolved)) {
-            throw new TurboExcelException("Import file not found or unreadable: {$path}");
+        
+        $localizer = new Localizer();
+        $isRemote = $disk !== null;
+        $workingPath = $isRemote ? $localizer->localize($path, $disk) : $path;
+
+        try {
+            $resolved = realpath($workingPath);
+            if ($resolved === false || ! is_readable($resolved)) {
+                throw new TurboExcelException("Import file not found or unreadable: {$workingPath}");
+            }
+            $workingPath = $resolved;
+
+            if ($format === Format::CSV && $import instanceof WithMultipleSheets) {
+                throw new TurboExcelException('WithMultipleSheets is only supported for XLSX imports.');
+            }
+
+            $this->assertMultiSheetCoordinator($import);
+
+            if ($import instanceof QueueImport) {
+                $this->assertQueuedImportsAllowCollection($import);
+
+                return $this->queueImport($import, $path, $disk, $format, $workingPath);
+            }
+
+            return $this->runSync($import, $workingPath, $format);
+        } finally {
+            if ($isRemote) {
+                $localizer->cleanup($workingPath);
+            }
         }
-        $path = $resolved;
-
-        if ($format === Format::CSV && $import instanceof WithMultipleSheets) {
-            throw new TurboExcelException('WithMultipleSheets is only supported for XLSX imports.');
-        }
-
-        $this->assertMultiSheetCoordinator($import);
-
-        if ($import instanceof QueueImport) {
-            $this->assertQueuedImportsAllowCollection($import);
-
-            return $this->queueImport($import, $path, $format);
-        }
-
-        return $this->runSync($import, $path, $format);
     }
 
     private function runSync(object $import, string $path, Format $format): Result
@@ -72,11 +83,20 @@ final class Importer
             return $this->runSyncMultiSheetXlsx($import, $path);
         }
 
+        $totalRows = 0;
+        $headerKeys = null;
+
+        if ($import instanceof \TurboExcel\Import\Concerns\WithProgress || $import instanceof WithChunkReading) {
+             $scan = (new ImportScanner($import, $path, $format, 1_000_000))->scan();
+             $totalRows = $scan->totalRows;
+             $headerKeys = $scan->headerKeys;
+        }
+
         $segmentImporter = new SegmentImporter();
 
         return match ($format) {
-            Format::CSV => $segmentImporter->run($import, $path, $format, new CsvReadSegment(0, null), null),
-            Format::XLSX => $segmentImporter->run($import, $path, $format, null, null),
+            Format::CSV => $segmentImporter->run($import, $path, $format, new CsvReadSegment(0, null), $headerKeys, null, $totalRows),
+            Format::XLSX => $segmentImporter->run($import, $path, $format, null, $headerKeys, null, $totalRows),
         };
     }
 
@@ -119,16 +139,16 @@ final class Importer
     /**
      * @return Result|Batch
      */
-    private function queueImport(object $import, string $path, Format $format): Result|Batch
+    private function queueImport(object $import, string $path, ?string $disk, Format $format, string $workingPath): Result|Batch
     {
         if ($import instanceof WithMultipleSheets) {
-            return $this->queueMultiSheetXlsx($import, $path);
+            return $this->queueMultiSheetXlsx($import, $path, $disk, $workingPath);
         }
 
         if ($import instanceof WithChunkReading) {
             $scan = (new ImportScanner(
                 $import,
-                $path,
+                $workingPath,
                 $format,
                 max(1, $import->chunkSize()),
             ))->scan();
@@ -143,10 +163,10 @@ final class Importer
             return new Result(0, 0, null);
         }
 
-        return $this->dispatchChunkJobs($import, $path, $format, $segments, $headerKeys);
+        return $this->dispatchChunkJobs($import, $path, $disk, $format, $segments, $headerKeys, $scan->totalRows ?? 0);
     }
 
-    private function queueMultiSheetXlsx(WithMultipleSheets $import, string $path): Result|Batch
+    private function queueMultiSheetXlsx(WithMultipleSheets $import, string $path, ?string $disk, string $workingPath): Result|Batch
     {
         $sheets = $import->sheets();
         if ($sheets === []) {
@@ -164,7 +184,7 @@ final class Importer
             if ($subImport instanceof WithChunkReading) {
                 $scan = (new ImportScanner(
                     $subImport,
-                    $path,
+                    $workingPath,
                     Format::XLSX,
                     max(1, $subImport->chunkSize()),
                     $sheetIndex,
@@ -176,8 +196,10 @@ final class Importer
                 $headerKeys = null;
             }
 
+            $totalRows = $scan->totalRows ?? 0;
+
             foreach ($segments as $segment) {
-                $jobs[] = new ProcessChunkJob($subImport, $path, Format::XLSX, $segment, $headerKeys, $aggregateKey);
+                $jobs[] = new ProcessChunkJob($subImport, $path, Format::XLSX, $segment, $headerKeys, $aggregateKey, $totalRows, $disk);
             }
         }
 
@@ -197,9 +219,11 @@ final class Importer
     private function dispatchChunkJobs(
         object $import,
         string $path,
+        ?string $disk,
         Format $format,
         array $segments,
         ?array $headerKeys,
+        int $totalRows,
     ): Batch {
         $aggregateKey = (string) Str::uuid();
         Cache::put("turbo_excel_import:{$aggregateKey}:processed", 0, 3600);
@@ -207,7 +231,7 @@ final class Importer
 
         $jobs = [];
         foreach ($segments as $segment) {
-            $jobs[] = new ProcessChunkJob($import, $path, $format, $segment, $headerKeys, $aggregateKey);
+            $jobs[] = new ProcessChunkJob($import, $path, $format, $segment, $headerKeys, $aggregateKey, $totalRows, $disk);
         }
 
         return Bus::batch($jobs)->name('turbo-excel-import')->dispatch();

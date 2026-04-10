@@ -21,9 +21,9 @@ final class CsvReader
     ) {}
 
     /**
-     * @return \Generator<int, RowYield>
+     * @return \Generator<int, array{rowIndex: int, cells: list<string>}>
      */
-    public function rows(int $startByte = 0, ?int $endByte = null): \Generator
+    public function iterateByByteOffset(int $startByte, ?int $endByte, int $startRowIndex = 1): \Generator
     {
         $handle = fopen($this->path, 'rb');
         if ($handle === false) {
@@ -37,7 +37,7 @@ final class CsvReader
                 self::skipUtf8BomIfAtStart($handle);
             }
 
-            $rowIndex = $startByte === 0 ? 1 : 0;
+            $rowIndex = $startRowIndex;
 
             while (! feof($handle)) {
                 $posBefore = ftell($handle);
