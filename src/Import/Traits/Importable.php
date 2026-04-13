@@ -37,6 +37,11 @@ trait Importable
         return $this;
     }
 
+    public function metrics(): self
+    {
+        return $this->withMetrics();
+    }
+
     public function isMetricsEnabled(): bool
     {
         return $this->withMetrics || $this instanceof WithMetrics;
