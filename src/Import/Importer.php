@@ -85,7 +85,7 @@ final class Importer
         $totalRows = 0;
         $headerKeys = null;
 
-        if ($import instanceof WithProgress || $import instanceof WithChunkReading || $import instanceof WithProgressBar) {
+        if ($import instanceof WithProgress || $import instanceof WithChunkReading || $import instanceof WithProgressBar || $this->isMetricsEnabled($import)) {
             $scan = (new ImportScanner($import, $path, $format, 1_000_000))->scan();
             $totalRows = $scan->totalRows;
             $headerKeys = $scan->headerKeys;
@@ -300,5 +300,18 @@ final class Importer
             Format::CSV => [new CsvReadSegment(0, null)],
             Format::XLSX => [new XlsxReadSegment(1, self::XLSX_MAX_PHYSICAL_ROW, 0)],
         };
+    }
+
+    private function isMetricsEnabled(object $import): bool
+    {
+        if ($import instanceof WithMetrics) {
+            return true;
+        }
+
+        if (method_exists($import, 'isMetricsEnabled')) {
+            return (bool) $import->isMetricsEnabled();
+        }
+
+        return false;
     }
 }

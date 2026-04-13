@@ -48,61 +48,93 @@ final class ImportScanner
             throw new TurboExcelException("Cannot open CSV: {$this->path}");
         }
 
-        [$delimiter, $enclosure, $escape] = $this->csvOptions();
-
         try {
             CsvReader::skipUtf8BomIfAtStart($handle);
+            [$delimiter, $enclosure, $escape] = $this->csvOptions();
 
             $headerRow = $this->import instanceof WithHeaderRow ? max(1, $this->import->headerRow()) : null;
-            $headerKeys = null;
+            $skipsEmpty = $this->import instanceof \TurboExcel\Import\Concerns\SkipsEmptyRows;
             $rowNum = 1;
+            $dataCount = 0;
+            $headerKeys = null;
 
             /** @var list<int> $segmentStarts */
             $segmentStarts = [];
             /** @var list<int> $segmentRowNumbers */
             $segmentRowNumbers = [];
-            $dataCount = 0;
 
-            while (! feof($handle)) {
-                $posBefore = ftell($handle);
-                if ($posBefore === false) {
+            $inside = false;
+            $buffer = '';
+            $currentLineStart = ftell($handle);
+            $chunkSize = 65536;
+
+            while (! feof($handle) || $buffer !== '') {
+                $chunk = fread($handle, $chunkSize);
+                if ($chunk !== false) {
+                    $buffer .= $chunk;
+                }
+
+                $pos = 0;
+                $len = strlen($buffer);
+
+                while ($pos < $len) {
+                    $char = $buffer[$pos];
+
+                    if ($char === $enclosure) {
+                        $inside = ! $inside;
+                    } elseif (! $inside && ($char === "\n" || $char === "\r")) {
+                        $eolLen = 1;
+                        if ($char === "\r" && $pos + 1 < $len && $buffer[$pos + 1] === "\n") {
+                            $eolLen = 2;
+                        }
+
+                        $lineContent = substr($buffer, 0, $pos);
+                        $this->processScannedRow(
+                            $lineContent,
+                            $rowNum,
+                            $headerRow,
+                            $skipsEmpty,
+                            $delimiter,
+                            $enclosure,
+                            $escape,
+                            $currentLineStart,
+                            $headerKeys,
+                            $dataCount,
+                            $segmentStarts,
+                            $segmentRowNumbers
+                        );
+
+                        $rowNum++;
+                        $buffer = substr($buffer, $pos + $eolLen);
+                        $currentLineStart += $pos + $eolLen;
+                        $len = strlen($buffer);
+                        $pos = 0;
+
+                        continue;
+                    }
+
+                    $pos++;
+                }
+
+                if (feof($handle)) {
+                    if ($buffer !== '') {
+                        $this->processScannedRow(
+                            $buffer,
+                            $rowNum,
+                            $headerRow,
+                            $skipsEmpty,
+                            $delimiter,
+                            $enclosure,
+                            $escape,
+                            $currentLineStart,
+                            $headerKeys,
+                            $dataCount,
+                            $segmentStarts,
+                            $segmentRowNumbers
+                        );
+                    }
                     break;
                 }
-
-                $line = fgetcsv($handle, 0, $delimiter, $enclosure, $escape);
-                if ($line === false) {
-                    break;
-                }
-
-                if ($this->isCsvRecordEmpty($line)) {
-                    $rowNum++;
-
-                    continue;
-                }
-
-                if ($headerRow !== null && $rowNum === $headerRow) {
-                    /** @var list<string> $cells */
-                    $cells = $this->normalizeCsvLine($line);
-                    HeaderProcessor::validateHeaders($cells, $this->import);
-                    $headerKeys = HeaderProcessor::buildHeaderKeys($cells, $this->import);
-                    $rowNum++;
-
-                    continue;
-                }
-
-                if ($headerRow !== null && $rowNum < $headerRow) {
-                    $rowNum++;
-
-                    continue;
-                }
-
-                if ($dataCount % $this->chunkSize === 0) {
-                    $segmentStarts[] = (int) $posBefore;
-                    $segmentRowNumbers[] = $rowNum;
-                }
-
-                $dataCount++;
-                $rowNum++;
             }
 
             if ($dataCount === 0) {
@@ -115,6 +147,62 @@ final class ImportScanner
         } finally {
             fclose($handle);
         }
+    }
+
+    /**
+     * @param  list<int>  $segmentStarts
+     * @param  list<int>  $segmentRowNumbers
+     */
+    private function processScannedRow(
+        string $lineContent,
+        int $rowNum,
+        ?int $headerRow,
+        bool $skipsEmpty,
+        string $delimiter,
+        string $enclosure,
+        string $escape,
+        int $currentLineStart,
+        ?array &$headerKeys,
+        int &$dataCount,
+        array &$segmentStarts,
+        array &$segmentRowNumbers,
+    ): void {
+        if ($headerRow !== null && $rowNum === $headerRow) {
+            $cells = str_getcsv($lineContent, $delimiter, $enclosure, $escape);
+            $normalized = $this->normalizeCsvLine($cells);
+            HeaderProcessor::validateHeaders($normalized, $this->import);
+            $headerKeys = HeaderProcessor::buildHeaderKeys($normalized, $this->import);
+
+            return;
+        }
+
+        if ($headerRow !== null && $rowNum < $headerRow) {
+            return;
+        }
+
+        if ($skipsEmpty && $this->isByteLineEmpty($lineContent, $delimiter)) {
+            return;
+        }
+
+        if ($dataCount % $this->chunkSize === 0) {
+            $segmentStarts[] = $currentLineStart;
+            $segmentRowNumbers[] = $rowNum;
+        }
+
+        $dataCount++;
+    }
+
+    private function isByteLineEmpty(string $line, string $delimiter): bool
+    {
+        $line = trim($line);
+        if ($line === '') {
+            return true;
+        }
+
+        // Fast check: if it's strictly delimiters/spaces
+        $cleaned = str_replace([$delimiter, ' ', "\t"], '', $line);
+
+        return $cleaned === '';
     }
 
     /**
