@@ -32,6 +32,7 @@ use TurboExcel\Import\Concerns\WithMapping;
 use TurboExcel\Import\Concerns\WithMultipleSheets as ImportWithMultipleSheets;
 use TurboExcel\Import\Concerns\WithNormalizedHeaders;
 use TurboExcel\Import\Concerns\WithProgress;
+use TurboExcel\Import\Concerns\WithProgressBar;
 use TurboExcel\Import\Concerns\WithStartRow;
 use TurboExcel\Import\Concerns\WithUpsertColumns;
 use TurboExcel\Import\Concerns\WithUpserts;
@@ -1041,5 +1042,29 @@ describe('Advanced Features', function (): void {
         // Chunk 2
         $importer->run($import, $path, Format::CSV, $segments[1], null, $aggregateKey, $totalRows);
         expect(Cache::get('queue-progress'))->toBe(100);
+    });
+
+    it('tracks progress using WithProgressBar concern (console)', function (): void {
+        $path = tmpPath('csv');
+        file_put_contents($path, "name\nAlice\nBob\nCharlie\n");
+
+        $import = new class implements ToCollection, WithHeaderRow, WithProgressBar
+        {
+            use Importable;
+
+            public function headerRow(): int
+            {
+                return 1;
+            }
+        };
+
+        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $import->withProgressBar($output); // This will create a bar internally
+
+        $result = TurboExcel::import($import, $path, format: Format::CSV);
+
+        expect($result->processed)->toBe(3);
+        expect($import->getProgressBar()->getProgress())->toBe(3);
+        expect($import->getProgressBar()->getMaxSteps())->toBe(3);
     });
 });

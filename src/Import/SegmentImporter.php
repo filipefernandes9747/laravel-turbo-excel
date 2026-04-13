@@ -22,6 +22,7 @@ use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Concerns\WithLimit;
 use TurboExcel\Import\Concerns\WithMetrics;
 use TurboExcel\Import\Concerns\WithProgress;
+use TurboExcel\Import\Concerns\WithProgressBar;
 use TurboExcel\Import\Concerns\WithStartRow;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Pipeline\ModelProcessor;
@@ -71,6 +72,8 @@ final class SegmentImporter
         $chunkSize = $import instanceof WithChunkReading ? max(1, $import->chunkSize()) : 1000;
         $limit = $import instanceof WithLimit ? $import->limit() : null;
         $startRow = $import instanceof WithStartRow ? $import->startRow() : 1;
+
+        $progressBar = method_exists($import, 'getProgressBar') ? $import->getProgressBar() : null;
 
         $rowIterator = $this->iterateRows($format, $path, $segment, $csvReader, $xlsxReader);
 
@@ -134,6 +137,10 @@ final class SegmentImporter
 
                 $processed++;
 
+                if ($import instanceof WithProgressBar && $progressBar) {
+                    $progressBar->advance();
+                }
+
                 if ($metricsEnabled && ($processed % $chunkSize === 0)) {
                     Log::info(sprintf(
                         '[TurboExcel] Processed %d rows... (Memory: %.2f MB)',
@@ -185,6 +192,10 @@ final class SegmentImporter
                 microtime(true) - $startTime,
                 memory_get_peak_usage(true) / 1024 / 1024
             ));
+        }
+
+        if ($import instanceof WithProgressBar && $progressBar) {
+            $progressBar->finish();
         }
 
         return $result;

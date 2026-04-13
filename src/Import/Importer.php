@@ -28,6 +28,7 @@ use TurboExcel\Import\Concerns\WithMetrics;
 use TurboExcel\Import\Concerns\WithMultipleSheets;
 use TurboExcel\Import\Concerns\WithNormalizedHeaders;
 use TurboExcel\Import\Concerns\WithProgress;
+use TurboExcel\Import\Concerns\WithProgressBar;
 use TurboExcel\Import\Concerns\WithStartRow;
 use TurboExcel\Import\Concerns\WithUpsertColumns;
 use TurboExcel\Import\Concerns\WithUpserts;
@@ -84,10 +85,16 @@ final class Importer
         $totalRows = 0;
         $headerKeys = null;
 
-        if ($import instanceof WithProgress || $import instanceof WithChunkReading) {
+        if ($import instanceof WithProgress || $import instanceof WithChunkReading || $import instanceof WithProgressBar) {
             $scan = (new ImportScanner($import, $path, $format, 1_000_000))->scan();
             $totalRows = $scan->totalRows;
             $headerKeys = $scan->headerKeys;
+        }
+
+        $progressBar = method_exists($import, 'getProgressBar') ? $import->getProgressBar() : null;
+        if ($import instanceof WithProgressBar && $progressBar && $totalRows > 0) {
+            $progressBar->setMaxSteps($totalRows);
+            $progressBar->start();
         }
 
         $segmentImporter = new SegmentImporter;
