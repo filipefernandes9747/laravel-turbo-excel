@@ -58,64 +58,128 @@ final class ImportScanner
             $rowNum = 1;
             $dataCount = 0;
             $headerKeys = null;
-
-            /** @var list<int> $segmentStarts */
             $segmentStarts = [];
-            /** @var list<int> $segmentRowNumbers */
             $segmentRowNumbers = [];
 
             $inside = false;
             $currentLineStart = ftell($handle);
             $currentRecordBuffer = '';
             $dataCount = 0;
-            $manualOffset = $currentLineStart;
+            $globalOffset = $currentLineStart;
+            $bufferSize = 1048576; // 1MB
 
-            while (($line = fgets($handle)) !== false) {
-                $lineLen = strlen($line);
-                $currentRecordBuffer .= $line;
-
-                // Optimization: Skip quote counting for lines without enclosures
-                if (str_contains($line, $enclosure)) {
-                    $quoteCount = substr_count($line, $enclosure);
-                    if ($quoteCount % 2 !== 0) {
-                        $inside = ! $inside;
-                    }
+            while (! feof($handle) || $currentRecordBuffer !== '') {
+                $chunk = fread($handle, $bufferSize);
+                if ($chunk === false && feof($handle)) {
+                    break;
                 }
 
-                if (! $inside) {
-                    // We found a complete row boundary!
-                    if ($headerRow !== null && $rowNum === $headerRow) {
-                        $cells = str_getcsv($currentRecordBuffer, $delimiter, $enclosure, $escape);
-                        $normalized = $this->normalizeCsvLine($cells);
-                        HeaderProcessor::validateHeaders($normalized, $this->import);
-                        $headerKeys = HeaderProcessor::buildHeaderKeys($normalized, $this->import);
-                    } elseif ($headerRow === null || $rowNum > $headerRow) {
-                        if (! $skipsEmpty || ! $this->isByteLineEmpty($currentRecordBuffer, $delimiter)) {
-                            if ($dataCount % $this->chunkSize === 0) {
-                                $segmentStarts[] = $currentLineStart;
-                                $segmentRowNumbers[] = $rowNum;
+                $chunkLen = $chunk === false ? 0 : strlen($chunk);
+                $chunkPos = 0;
+
+                while ($chunkPos < $chunkLen || ($chunkPos === 0 && feof($handle) && $currentRecordBuffer !== '')) {
+                    if (! $inside) {
+                        // While outside quotes, scan for the next newline or enclosure
+                        $nextN = $chunk === false ? false : strpos($chunk, "\n", $chunkPos);
+                        $nextR = $chunk === false ? false : strpos($chunk, "\r", $chunkPos);
+                        $nextE = $chunk === false ? false : strpos($chunk, $enclosure, $chunkPos);
+
+                        // Find the earliest event
+                        $targets = [];
+                        if ($nextN !== false) {
+                            $targets[] = ['type' => 'newline', 'pos' => $nextN, 'len' => 1];
+                        }
+                        if ($nextR !== false) {
+                            $targets[] = ['type' => 'newline', 'pos' => $nextR, 'len' => ($nextR + 1 < $chunkLen && $chunk[$nextR + 1] === "\n") ? 2 : 1];
+                        }
+                        if ($nextE !== false) {
+                            $targets[] = ['type' => 'enclosure', 'pos' => $nextE, 'len' => 1];
+                        }
+
+                        if ($targets === []) {
+                            // No events in the rest of this chunk
+                            if ($chunk !== false) {
+                                $currentRecordBuffer .= substr($chunk, $chunkPos);
                             }
-                            $dataCount++;
+                            $globalOffset += ($chunkLen - $chunkPos);
+                            $chunkPos = $chunkLen;
+
+                            if (feof($handle) && $currentRecordBuffer !== '') {
+                                // Implicit row at EOF
+                                $this->fastProcessRow(
+                                    $currentRecordBuffer,
+                                    $rowNum,
+                                    $headerRow,
+                                    $skipsEmpty,
+                                    $delimiter,
+                                    $enclosure,
+                                    $escape,
+                                    $currentLineStart,
+                                    $headerKeys,
+                                    $dataCount,
+                                    $segmentStarts,
+                                    $segmentRowNumbers
+                                );
+                                $currentRecordBuffer = '';
+                            }
+                        } else {
+                            // Sort targets by position
+                            usort($targets, fn ($a, $b) => $a['pos'] <=> $b['pos']);
+                            $event = $targets[0];
+
+                            if ($chunk !== false) {
+                                $piece = substr($chunk, $chunkPos, $event['pos'] - $chunkPos);
+                                $currentRecordBuffer .= $piece;
+                            }
+
+                            if ($event['type'] === 'newline') {
+                                // Complete row!
+                                $this->fastProcessRow(
+                                    $currentRecordBuffer,
+                                    $rowNum,
+                                    $headerRow,
+                                    $skipsEmpty,
+                                    $delimiter,
+                                    $enclosure,
+                                    $escape,
+                                    $currentLineStart,
+                                    $headerKeys,
+                                    $dataCount,
+                                    $segmentStarts,
+                                    $segmentRowNumbers
+                                );
+
+                                $rowNum++;
+                                $globalOffset += ($event['pos'] - $chunkPos + $event['len']);
+                                $currentLineStart = $globalOffset;
+                                $chunkPos = $event['pos'] + $event['len'];
+                                $currentRecordBuffer = '';
+                            } else {
+                                // Enclosure found, toggle state
+                                $inside = true;
+                                $globalOffset += ($event['pos'] - $chunkPos + 1);
+                                $chunkPos = $event['pos'] + 1;
+                            }
                         }
-                    }
+                    } else {
+                        // While inside quotes, only look for the next enclosure
+                        $nextE = $chunk === false ? false : strpos($chunk, $enclosure, $chunkPos);
 
-                    $rowNum++;
-                    $currentRecordBuffer = '';
-                    $currentLineStart = $manualOffset + $lineLen;
-                }
-
-                $manualOffset += $lineLen;
-            }
-
-            // Handle potential last row without a newline
-            if ($currentRecordBuffer !== '') {
-                if ($headerRow === null || $rowNum > $headerRow) {
-                    if (! $skipsEmpty || ! $this->isByteLineEmpty($currentRecordBuffer, $delimiter)) {
-                        if ($dataCount % $this->chunkSize === 0) {
-                            $segmentStarts[] = $currentLineStart;
-                            $segmentRowNumbers[] = $rowNum;
+                        if ($nextE === false) {
+                            if ($chunk !== false) {
+                                $currentRecordBuffer .= substr($chunk, $chunkPos);
+                            }
+                            $globalOffset += ($chunkLen - $chunkPos);
+                            $chunkPos = $chunkLen;
+                        } else {
+                            if ($chunk !== false) {
+                                $piece = substr($chunk, $chunkPos, $nextE - $chunkPos + 1);
+                                $currentRecordBuffer .= $piece;
+                            }
+                            $inside = false;
+                            $globalOffset += ($nextE - $chunkPos + 1);
+                            $chunkPos = $nextE + 1;
                         }
-                        $dataCount++;
                     }
                 }
             }
@@ -130,6 +194,45 @@ final class ImportScanner
         } finally {
             fclose($handle);
         }
+    }
+
+    private function fastProcessRow(
+        string $lineContent,
+        int $rowNum,
+        ?int $headerRow,
+        bool $skipsEmpty,
+        string $delimiter,
+        string $enclosure,
+        string $escape,
+        int $currentLineStart,
+        ?array &$headerKeys,
+        int &$dataCount,
+        array &$segmentStarts,
+        array &$segmentRowNumbers,
+    ): void {
+        if ($headerRow !== null && $rowNum === $headerRow) {
+            $cells = str_getcsv($lineContent, $delimiter, $enclosure, $escape);
+            $normalized = $this->normalizeCsvLine($cells);
+            HeaderProcessor::validateHeaders($normalized, $this->import);
+            $headerKeys = HeaderProcessor::buildHeaderKeys($normalized, $this->import);
+
+            return;
+        }
+
+        if ($headerRow !== null && $rowNum < $headerRow) {
+            return;
+        }
+
+        if ($skipsEmpty && $this->isByteLineEmpty($lineContent, $delimiter)) {
+            return;
+        }
+
+        if ($dataCount % $this->chunkSize === 0) {
+            $segmentStarts[] = $currentLineStart;
+            $segmentRowNumbers[] = $rowNum;
+        }
+
+        $dataCount++;
     }
 
     private function isByteLineEmpty(string $line, string $delimiter): bool
