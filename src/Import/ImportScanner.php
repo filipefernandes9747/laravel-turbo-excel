@@ -64,77 +64,61 @@ final class ImportScanner
             $segmentRowNumbers = [];
 
             $inside = false;
-            $buffer = '';
             $currentLineStart = ftell($handle);
-            $chunkSize = 65536;
+            $currentRecordBuffer = '';
 
-            while (! feof($handle) || $buffer !== '') {
-                $chunk = fread($handle, $chunkSize);
-                if ($chunk !== false) {
-                    $buffer .= $chunk;
+            while (($line = fgets($handle)) !== false) {
+                $posAfter = ftell($handle);
+                $currentRecordBuffer .= $line;
+
+                // Fast count of enclosures to handle multi-line CSV records
+                $quoteCount = substr_count($line, $enclosure);
+                
+                // If escape is the same as enclosure (standard ""), 
+                // we don't need complex logic, just parity.
+                if ($quoteCount % 2 !== 0) {
+                    $inside = ! $inside;
                 }
 
-                $pos = 0;
-                $len = strlen($buffer);
+                if (! $inside) {
+                    // We found a complete row boundary!
+                    $this->processScannedRow(
+                        $currentRecordBuffer,
+                        $rowNum,
+                        $headerRow,
+                        $skipsEmpty,
+                        $delimiter,
+                        $enclosure,
+                        $escape,
+                        $currentLineStart,
+                        $headerKeys,
+                        $dataCount,
+                        $segmentStarts,
+                        $segmentRowNumbers
+                    );
 
-                while ($pos < $len) {
-                    $char = $buffer[$pos];
-
-                    if ($char === $enclosure) {
-                        $inside = ! $inside;
-                    } elseif (! $inside && ($char === "\n" || $char === "\r")) {
-                        $eolLen = 1;
-                        if ($char === "\r" && $pos + 1 < $len && $buffer[$pos + 1] === "\n") {
-                            $eolLen = 2;
-                        }
-
-                        $lineContent = substr($buffer, 0, $pos);
-                        $this->processScannedRow(
-                            $lineContent,
-                            $rowNum,
-                            $headerRow,
-                            $skipsEmpty,
-                            $delimiter,
-                            $enclosure,
-                            $escape,
-                            $currentLineStart,
-                            $headerKeys,
-                            $dataCount,
-                            $segmentStarts,
-                            $segmentRowNumbers
-                        );
-
-                        $rowNum++;
-                        $buffer = substr($buffer, $pos + $eolLen);
-                        $currentLineStart += $pos + $eolLen;
-                        $len = strlen($buffer);
-                        $pos = 0;
-
-                        continue;
-                    }
-
-                    $pos++;
+                    $rowNum++;
+                    $currentRecordBuffer = '';
+                    $currentLineStart = $posAfter;
                 }
+            }
 
-                if (feof($handle)) {
-                    if ($buffer !== '') {
-                        $this->processScannedRow(
-                            $buffer,
-                            $rowNum,
-                            $headerRow,
-                            $skipsEmpty,
-                            $delimiter,
-                            $enclosure,
-                            $escape,
-                            $currentLineStart,
-                            $headerKeys,
-                            $dataCount,
-                            $segmentStarts,
-                            $segmentRowNumbers
-                        );
-                    }
-                    break;
-                }
+            // Handle potential last row without a newline
+            if ($currentRecordBuffer !== '') {
+                $this->processScannedRow(
+                    $currentRecordBuffer,
+                    $rowNum,
+                    $headerRow,
+                    $skipsEmpty,
+                    $delimiter,
+                    $enclosure,
+                    $escape,
+                    $currentLineStart,
+                    $headerKeys,
+                    $dataCount,
+                    $segmentStarts,
+                    $segmentRowNumbers
+                );
             }
 
             if ($dataCount === 0) {
