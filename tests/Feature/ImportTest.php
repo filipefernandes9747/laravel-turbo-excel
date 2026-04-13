@@ -7,6 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\Console\Output\BufferedOutput;
 use TurboExcel\Concerns\FromArray;
 use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithMultipleSheets as ExportWithMultipleSheets;
@@ -1058,7 +1059,7 @@ describe('Advanced Features', function (): void {
             }
         };
 
-        $output = new \Symfony\Component\Console\Output\BufferedOutput();
+        $output = new BufferedOutput;
         $import->withProgressBar($output); // This will create a bar internally
 
         $result = TurboExcel::import($import, $path, format: Format::CSV);

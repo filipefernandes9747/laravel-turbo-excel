@@ -8,6 +8,7 @@ use OpenSpout\Reader\XLSX\Reader;
 use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Import\Concerns\SkipsEmptyRows;
 use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Readers\CsvReader;
@@ -53,7 +54,7 @@ final class ImportScanner
             [$delimiter, $enclosure, $escape] = $this->csvOptions();
 
             $headerRow = $this->import instanceof WithHeaderRow ? max(1, $this->import->headerRow()) : null;
-            $skipsEmpty = $this->import instanceof \TurboExcel\Import\Concerns\SkipsEmptyRows;
+            $skipsEmpty = $this->import instanceof SkipsEmptyRows;
             $rowNum = 1;
             $dataCount = 0;
             $headerKeys = null;
@@ -102,7 +103,7 @@ final class ImportScanner
                     $currentRecordBuffer = '';
                     $currentLineStart = $manualOffset + $lineLen;
                 }
-                
+
                 $manualOffset += $lineLen;
             }
 

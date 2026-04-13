@@ -61,7 +61,8 @@
     },
     "scripts": {
         "test": "vendor/bin/pest",
-        "test:coverage": "vendor/bin/pest --coverage"
+        "test:coverage": "vendor/bin/pest --coverage",
+        "format": "vendor/bin/pint"
     },
     "minimum-stability": "stable",
     "prefer-stable": true
