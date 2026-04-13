@@ -961,7 +961,7 @@ describe('Advanced Features', function (): void {
         expect($import->indices)->toBe([1, 2, 3]);
     });
 
-    it('works with withMetrics() and WithMetrics interface without errors', function (): void {
+    it('works with withMetrics() and WithMetrics interface and returns metrics in Result', function (): void {
         Log::shouldReceive('info')->atLeast()->times(1);
 
         $path = tmpPath('csv');
@@ -972,7 +972,12 @@ describe('Advanced Features', function (): void {
             use Importable;
         };
 
-        $import->withMetrics()->import($path, format: Format::CSV);
+        $result = $import->withMetrics()->import($path, format: Format::CSV);
+
+        expect($result->duration)->toBeGreaterThan(0)
+            ->and($result->peakMemory)->toBeGreaterThan(0)
+            ->and($result->metrics())->toBeArray()
+            ->and($result->metrics())->toHaveKeys(['duration', 'peak_memory', 'processed', 'failed', 'rows']);
     });
 
     it('tracks percentage progress with WithProgress interface', function (): void {

@@ -108,6 +108,8 @@ final class Importer
         $segmentImporter = new SegmentImporter;
         $processed = 0;
         $failed = 0;
+        $duration = 0.0;
+        $peakMemory = 0.0;
         $mergedRows = null;
 
         foreach ($sheets as $sheetIndex => $subImport) {
@@ -125,13 +127,15 @@ final class Importer
 
             $processed += $result->processed;
             $failed += $result->failed;
+            $duration += $result->duration;
+            $peakMemory = max($peakMemory, $result->peakMemory);
 
             if ($result->rows !== null) {
                 $mergedRows = ($mergedRows ?? collect())->concat($result->rows);
             }
         }
 
-        return new Result($processed, $failed, $mergedRows);
+        return new Result($processed, $failed, $mergedRows, $duration, $peakMemory);
     }
 
     private function queueImport(object $import, string $path, ?string $disk, Format $format, string $workingPath): Result|Batch

@@ -158,7 +158,10 @@ final class SegmentImporter
             $import->onChunk(collect($chunkRows));
         }
 
-        $result = new Result($processed, $failed, $rows);
+        $duration = microtime(true) - $startTime;
+        $peakMemory = memory_get_peak_usage(true) / 1024 / 1024;
+
+        $result = new Result($processed, $failed, $rows, $duration, $peakMemory);
 
         if ($aggregateKey !== null) {
             Cache::increment("turbo_excel_import:{$aggregateKey}:processed", $result->processed);

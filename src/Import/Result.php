@@ -16,5 +16,21 @@ final class Result
         public readonly int $processed,
         public readonly int $failed,
         public readonly ?Collection $rows = null,
+        public readonly float $duration = 0.0,
+        public readonly float $peakMemory = 0.0,
     ) {}
+
+    /**
+     * @return array{duration: float, peak_memory: float, processed: int, failed: int, rows: Collection|null}
+     */
+    public function metrics(): array
+    {
+        return [
+            'duration' => $this->duration,
+            'peak_memory' => $this->peakMemory,
+            'processed' => $this->processed,
+            'failed' => $this->failed,
+            'rows' => $this->rows,
+        ];
+    }
 }
