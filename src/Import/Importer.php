@@ -8,14 +8,21 @@ use Illuminate\Bus\Batch;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use TurboExcel\Concerns\WithEvents;
 use TurboExcel\Enums\Format;
+use TurboExcel\Events\AfterImport;
+use TurboExcel\Events\BeforeImport;
 use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Exceptions\UnknownSheetException;
 use TurboExcel\Import\Concerns\OnEachChunk;
 use TurboExcel\Import\Concerns\OnEachRow;
 use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Concerns\ShouldQueue as QueueImport;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
+use TurboExcel\Import\Concerns\SkipsOnError;
 use TurboExcel\Import\Concerns\SkipsOnFailure;
+use TurboExcel\Import\Concerns\SkipsUnknownSheets;
+use TurboExcel\Import\Concerns\ToArray;
 use TurboExcel\Import\Concerns\ToCollection;
 use TurboExcel\Import\Concerns\ToModel;
 use TurboExcel\Import\Concerns\WithBatchInserts;
@@ -62,13 +69,29 @@ final class Importer
 
             $this->assertMultiSheetCoordinator($import);
 
+            if ($import instanceof WithEvents) {
+                if (isset($import->registerEvents()[BeforeImport::class])) {
+                    $import->registerEvents()[BeforeImport::class](new BeforeImport($this, $import));
+                }
+            }
+
+            $result = null;
             if ($import instanceof QueueImport) {
                 $this->assertQueuedImportsAllowCollection($import);
 
-                return $this->queueImport($import, $path, $disk, $format, $workingPath);
+                $result = $this->queueImport($import, $path, $disk, $format, $workingPath);
+            } else {
+                $result = $this->runSync($import, $workingPath, $format);
             }
 
-            return $this->runSync($import, $workingPath, $format);
+            if ($import instanceof WithEvents) {
+                if (isset($import->registerEvents()[AfterImport::class])) {
+                    $resultObj = $result instanceof Result ? $result : null;
+                    $import->registerEvents()[AfterImport::class](new AfterImport($this, $import, $resultObj));
+                }
+            }
+
+            return $result;
         } finally {
             if ($isRemote) {
                 $localizer->cleanup($workingPath);
@@ -124,13 +147,20 @@ final class Importer
                 throw new TurboExcelException('WithMultipleSheets::sheets() must return a list of import objects.');
             }
 
-            $result = $segmentImporter->run(
-                $subImport,
-                $path,
-                Format::XLSX,
-                new XlsxReadSegment(1, self::XLSX_MAX_PHYSICAL_ROW, $sheetIndex),
-                null,
-            );
+            try {
+                $result = $segmentImporter->run(
+                    $subImport,
+                    $path,
+                    Format::XLSX,
+                    new XlsxReadSegment(1, self::XLSX_MAX_PHYSICAL_ROW, $sheetIndex),
+                    null,
+                );
+            } catch (UnknownSheetException $e) {
+                if ($import instanceof SkipsUnknownSheets || $subImport instanceof SkipsUnknownSheets) {
+                    continue;
+                }
+                throw $e;
+            }
 
             $processed += $result->processed;
             $failed += $result->failed;
@@ -138,7 +168,13 @@ final class Importer
             $peakMemory = max($peakMemory, $result->peakMemory);
 
             if ($result->rows !== null) {
-                $mergedRows = ($mergedRows ?? collect())->concat($result->rows);
+                if ($mergedRows === null) {
+                    $mergedRows = $result->rows;
+                } elseif (is_array($mergedRows) && is_array($result->rows)) {
+                    $mergedRows = array_merge($mergedRows, $result->rows);
+                } else {
+                    $mergedRows = (is_array($mergedRows) ? collect($mergedRows) : $mergedRows)->concat($result->rows);
+                }
             }
         }
 
@@ -187,19 +223,26 @@ final class Importer
                 throw new TurboExcelException('WithMultipleSheets::sheets() must return a list of import objects.');
             }
 
-            if ($subImport instanceof WithChunkReading) {
-                $scan = (new ImportScanner(
-                    $subImport,
-                    $workingPath,
-                    Format::XLSX,
-                    max(1, $subImport->chunkSize()),
-                    $sheetIndex,
-                ))->scan();
-                $segments = $scan->segments;
-                $headerKeys = $scan->headerKeys;
-            } else {
-                $segments = [new XlsxReadSegment(1, self::XLSX_MAX_PHYSICAL_ROW, $sheetIndex)];
-                $headerKeys = null;
+            try {
+                if ($subImport instanceof WithChunkReading) {
+                    $scan = (new ImportScanner(
+                        $subImport,
+                        $workingPath,
+                        Format::XLSX,
+                        max(1, $subImport->chunkSize()),
+                        $sheetIndex,
+                    ))->scan();
+                    $segments = $scan->segments;
+                    $headerKeys = $scan->headerKeys;
+                } else {
+                    $segments = [new XlsxReadSegment(1, self::XLSX_MAX_PHYSICAL_ROW, $sheetIndex)];
+                    $headerKeys = null;
+                }
+            } catch (UnknownSheetException $e) {
+                if ($import instanceof SkipsUnknownSheets || $subImport instanceof SkipsUnknownSheets) {
+                    continue;
+                }
+                throw $e;
             }
 
             $totalRows = $scan->totalRows ?? 0;
@@ -252,11 +295,13 @@ final class Importer
         $rowLevel = [
             $import instanceof ToModel,
             $import instanceof ToCollection,
+            $import instanceof ToArray,
             $import instanceof WithHeaderRow,
             $import instanceof WithHeaderValidation,
             $import instanceof WithNormalizedHeaders,
             $import instanceof WithMapping,
             $import instanceof WithValidation,
+            $import instanceof SkipsOnError,
             $import instanceof SkipsOnFailure,
             $import instanceof WithBatchInserts,
             $import instanceof WithChunkReading,
@@ -265,6 +310,7 @@ final class Importer
             $import instanceof WithUpserts,
             $import instanceof WithUpsertColumns,
             $import instanceof SkipsEmptyRows,
+            $import instanceof WithEvents,
             $import instanceof WithStartRow,
             $import instanceof WithLimit,
             $import instanceof WithMetrics,

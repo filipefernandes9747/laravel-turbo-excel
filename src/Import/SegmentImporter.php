@@ -11,11 +11,15 @@ use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Exceptions\UnknownSheetException;
 use TurboExcel\Import\Concerns\OnEachChunk;
 use TurboExcel\Import\Concerns\OnEachRow;
 use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
+use TurboExcel\Import\Concerns\SkipsOnError;
 use TurboExcel\Import\Concerns\SkipsOnFailure;
+use TurboExcel\Import\Concerns\SkipsUnknownSheets;
+use TurboExcel\Import\Concerns\ToArray;
 use TurboExcel\Import\Concerns\ToCollection;
 use TurboExcel\Import\Concerns\WithChunkReading;
 use TurboExcel\Import\Concerns\WithHeaderRow;
@@ -65,8 +69,10 @@ final class SegmentImporter
         $xlsxReader = new XlsxReader;
         $models = new ModelProcessor($import);
 
-        /** @var Collection<int, array<string, mixed>>|null $rows */
-        $rows = $import instanceof ToCollection ? collect() : null;
+        $isArray = $import instanceof ToArray;
+
+        /** @var Collection<int, array<string, mixed>>|array<int, array<string, mixed>>|null $rows */
+        $rows = $import instanceof ToCollection ? collect() : ($isArray ? [] : null);
 
         $chunkRows = [];
         $chunkSize = $import instanceof WithChunkReading ? max(1, $import->chunkSize()) : 1000;
@@ -77,85 +83,98 @@ final class SegmentImporter
 
         $rowIterator = $this->iterateRows($format, $path, $segment, $csvReader, $xlsxReader);
 
-        foreach ($rowIterator as $item) {
-            $cells = $item['cells'];
-            $rowIndex = $item['rowIndex'];
-            $rowForPipeline = null;
+        try {
+            foreach ($rowIterator as $item) {
+                $cells = $item['cells'];
+                $rowIndex = $item['rowIndex'];
+                $rowForPipeline = null;
 
-            if ($rowIndex < $startRow) {
-                continue;
-            }
-
-            if ($limit !== null && $processed >= $limit) {
-                break;
-            }
-
-            if ($import instanceof RemembersRowNumber) {
-                $import->setRowNumber($rowIndex);
-            }
-
-            if ($import instanceof SkipsEmptyRows && $this->isEmptyRow($cells)) {
-                continue;
-            }
-
-            try {
-                if ($import instanceof WithHeaderRow && $rowIndex === max(1, $import->headerRow())) {
-                    if ($resolvedKeys === null) {
-                        HeaderProcessor::validateHeaders($cells, $import);
-                        $resolvedKeys = HeaderProcessor::buildHeaderKeys($cells, $import);
-                    }
-
+                if ($rowIndex < $startRow) {
                     continue;
                 }
 
-                $rowForPipeline = $this->combineRow($resolvedKeys, $cells, $import);
-
-                $mapped = RowMapper::map($import, $rowForPipeline);
-                $data = $this->normalizeKeysForLaravel($mapped);
-
-                if ($import instanceof WithAnonymization) {
-                    $data = $this->anonymizeRow($data, $import);
+                if ($limit !== null && $processed >= $limit) {
+                    break;
                 }
 
-                RowValidator::validate($import, $data);
-                $models->persist($data);
-                if ($rows !== null) {
-                    $rows->push($data);
+                if ($import instanceof RemembersRowNumber) {
+                    $import->setRowNumber($rowIndex);
                 }
 
-                if ($import instanceof OnEachRow) {
-                    $import->onRow($data);
+                if ($import instanceof SkipsEmptyRows && $this->isEmptyRow($cells)) {
+                    continue;
                 }
 
-                if ($import instanceof OnEachChunk) {
-                    $chunkRows[] = $data;
-                    if (count($chunkRows) >= $chunkSize) {
-                        $import->onChunk(collect($chunkRows));
-                        $chunkRows = [];
+                try {
+                    if ($import instanceof WithHeaderRow && $rowIndex === max(1, $import->headerRow())) {
+                        if ($resolvedKeys === null) {
+                            HeaderProcessor::validateHeaders($cells, $import);
+                            $resolvedKeys = HeaderProcessor::buildHeaderKeys($cells, $import);
+                        }
+
+                        continue;
+                    }
+
+                    $rowForPipeline = $this->combineRow($resolvedKeys, $cells, $import);
+
+                    $mapped = RowMapper::map($import, $rowForPipeline);
+                    $data = $this->normalizeKeysForLaravel($mapped);
+
+                    if ($import instanceof WithAnonymization) {
+                        $data = $this->anonymizeRow($data, $import);
+                    }
+
+                    RowValidator::validate($import, $data);
+                    $models->persist($data);
+                    if ($rows !== null) {
+                        if ($isArray) {
+                            $rows[] = $data;
+                        } else {
+                            $rows->push($data);
+                        }
+                    }
+
+                    if ($import instanceof OnEachRow) {
+                        $import->onRow($data);
+                    }
+
+                    if ($import instanceof OnEachChunk) {
+                        $chunkRows[] = $data;
+                        if (count($chunkRows) >= $chunkSize) {
+                            $import->onChunk(collect($chunkRows));
+                            $chunkRows = [];
+                        }
+                    }
+
+                    $processed++;
+
+                    if ($import instanceof WithProgressBar && $progressBar) {
+                        $progressBar->advance();
+                    }
+
+                    if ($metricsEnabled && ($processed % $chunkSize === 0)) {
+                        Log::info(sprintf(
+                            '[TurboExcel] Processed %d rows... (Memory: %.2f MB)',
+                            $processed,
+                            memory_get_peak_usage(true) / 1024 / 1024
+                        ));
+                    }
+                } catch (\Throwable $e) {
+                    if ($import instanceof SkipsOnFailure) {
+                        $import->onFailure($rowForPipeline ?? $cells, $e);
+                        $failed++;
+                    } elseif ($import instanceof SkipsOnError) {
+                        $import->onError($e);
+                        $failed++;
+                    } else {
+                        $models->flush();
+                        throw $e;
                     }
                 }
-
-                $processed++;
-
-                if ($import instanceof WithProgressBar && $progressBar) {
-                    $progressBar->advance();
-                }
-
-                if ($metricsEnabled && ($processed % $chunkSize === 0)) {
-                    Log::info(sprintf(
-                        '[TurboExcel] Processed %d rows... (Memory: %.2f MB)',
-                        $processed,
-                        memory_get_peak_usage(true) / 1024 / 1024
-                    ));
-                }
-            } catch (\Throwable $e) {
-                if ($import instanceof SkipsOnFailure) {
-                    $import->onFailure($rowForPipeline ?? $cells, $e);
-                    $failed++;
-                } else {
-                    $models->flush();
-                    throw $e;
-                }
+            }
+        } catch (UnknownSheetException $e) {
+            if (! $import instanceof SkipsUnknownSheets) {
+                throw $e;
             }
         }
 

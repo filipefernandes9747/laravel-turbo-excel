@@ -16,6 +16,7 @@ use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithChunkSize;
 use TurboExcel\Concerns\WithColumnFormatting;
 use TurboExcel\Concerns\WithDebug;
+use TurboExcel\Concerns\WithEvents;
 use TurboExcel\Concerns\WithHeadings;
 use TurboExcel\Concerns\WithMapping;
 use TurboExcel\Concerns\WithMultipleSheets;
@@ -23,6 +24,8 @@ use TurboExcel\Concerns\WithQuerySplitBySheet;
 use TurboExcel\Concerns\WithStyles;
 use TurboExcel\Concerns\WithTitle;
 use TurboExcel\Enums\Format;
+use TurboExcel\Events\AfterExport;
+use TurboExcel\Events\BeforeExport;
 use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\Writers\Contracts\WriterInterface;
 use TurboExcel\Writers\CsvWriter;
@@ -59,6 +62,12 @@ final class Exporter
         $isDebug = $this->export instanceof WithDebug;
         $startTime = microtime(true);
 
+        if ($this->export instanceof WithEvents) {
+            if (isset($this->export->registerEvents()[BeforeExport::class])) {
+                $this->export->registerEvents()[BeforeExport::class](new BeforeExport($this, $this->export));
+            }
+        }
+
         if ($isDebug) {
             Log::info('TurboExcel: Starting export', [
                 'format' => $this->format->value,
@@ -88,6 +97,12 @@ final class Exporter
                 'execution_time' => round(microtime(true) - $startTime, 2).'s',
                 'peak_memory' => round(memory_get_peak_usage() / 1024 / 1024, 2).'MB',
             ]);
+        }
+
+        if ($this->export instanceof WithEvents) {
+            if (isset($this->export->registerEvents()[AfterExport::class])) {
+                $this->export->registerEvents()[AfterExport::class](new AfterExport($this, $this->export));
+            }
         }
     }
 

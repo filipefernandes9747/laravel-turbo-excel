@@ -10,12 +10,12 @@ use TurboExcel\Import\Concerns\ToCollection;
 final class Result
 {
     /**
-     * @param  Collection<int, array<string, mixed>>|null  $rows  Set when the import implements {@see ToCollection}
+     * @param  Collection<int, array<string, mixed>>|array<int, array<string, mixed>>|null  $rows  Set when the import implements {@see ToCollection} or {@see ToArray}
      */
     public function __construct(
         public readonly int $processed,
         public readonly int $failed,
-        public readonly ?Collection $rows = null,
+        public readonly Collection|array|null $rows = null,
         public readonly float $duration = 0.0,
         public readonly float $peakMemory = 0.0,
     ) {}

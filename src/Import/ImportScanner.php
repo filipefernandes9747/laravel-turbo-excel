@@ -8,7 +8,9 @@ use OpenSpout\Reader\XLSX\Reader;
 use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
+use TurboExcel\Exceptions\UnknownSheetException;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
+use TurboExcel\Import\Concerns\SkipsUnknownSheets;
 use TurboExcel\Import\Concerns\WithHeaderRow;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Readers\CsvReader;
@@ -44,156 +46,136 @@ final class ImportScanner
 
     private function scanCsv(): ImportScan
     {
+        $eol = $this->detectEol($this->path);
+        $eolLen = strlen($eol);
+        [$delimiter, $enclosure, $escape] = $this->csvOptions();
+        $headerRow = $this->import instanceof WithHeaderRow ? $this->import->headerRow() : null;
+        $skipsEmpty = $this->import instanceof SkipsEmptyRows;
+
         $handle = fopen($this->path, 'rb');
         if ($handle === false) {
             throw new TurboExcelException("Cannot open CSV: {$this->path}");
         }
 
+        $headerKeys = null;
+        $segmentStarts = [];
+        $segmentRowNumbers = [];
+
+        $rowNum = 1;
+        $dataCount = 0;
+        $bufferSize = 1048576; // 1MB
+
         try {
             CsvReader::skipUtf8BomIfAtStart($handle);
-            [$delimiter, $enclosure, $escape] = $this->csvOptions();
+            $globalOffset = (int) ftell($handle);
 
-            $headerRow = $this->import instanceof WithHeaderRow ? max(1, $this->import->headerRow()) : null;
-            $skipsEmpty = $this->import instanceof SkipsEmptyRows;
-            $rowNum = 1;
-            $dataCount = 0;
-            $headerKeys = null;
-            $segmentStarts = [];
-            $segmentRowNumbers = [];
+            // ── PHASE 1: Context-Aware mode ──────────────────────────────────────────
+            // Read line-by-line until we are past the header row (and done with
+            // SkipsEmptyRows checks). fgets() is safe and correct here because
+            // this phase only processes a tiny number of rows (typically 1).
+            $needsContextMode = ($headerRow !== null) || $skipsEmpty;
+            while ($needsContextMode && ! feof($handle)) {
+                $lineStart = $globalOffset;
+                $line = fgets($handle);
+                if ($line === false) {
+                    break;
+                }
+                $globalOffset += strlen($line);
+                $lineContent = rtrim($line, "\r\n");
 
-            $inside = false;
-            $currentLineStart = ftell($handle);
-            $currentRecordBuffer = '';
-            $dataCount = 0;
-            $globalOffset = $currentLineStart;
-            $bufferSize = 1048576; // 1MB
+                $this->fastProcessRow(
+                    $lineContent,
+                    $rowNum,
+                    $headerRow,
+                    $skipsEmpty,
+                    $delimiter,
+                    $enclosure,
+                    $escape,
+                    $lineStart,
+                    $headerKeys,
+                    $dataCount,
+                    $segmentStarts,
+                    $segmentRowNumbers
+                );
 
-            while (! feof($handle) || $currentRecordBuffer !== '') {
+                $rowNum++;
+                $needsContextMode = ($headerRow !== null && $rowNum <= $headerRow) || $skipsEmpty;
+            }
+
+            // ── PHASE 2: Turbo Zero-Copy mode ────────────────────────────────────────
+            // We are now past the header. We only need to count newlines and record
+            // segment boundaries. No string allocations per row.
+            $partialRow = false; // tracks whether the last chunk ended mid-row
+            $lastSegmentOffset = $globalOffset;
+
+            while (! feof($handle)) {
                 $chunk = fread($handle, $bufferSize);
-                if ($chunk === false && feof($handle)) {
+                if ($chunk === false || $chunk === '') {
                     break;
                 }
 
-                $chunkLen = $chunk === false ? 0 : strlen($chunk);
-                $chunkPos = 0;
+                $chunkLen = strlen($chunk);
+                $pos = 0;
 
-                while ($chunkPos < $chunkLen || ($chunkPos === 0 && feof($handle) && $currentRecordBuffer !== '')) {
-                    if (! $inside) {
-                        // While outside quotes, scan for the next newline or enclosure
-                        $nextN = $chunk === false ? false : strpos($chunk, "\n", $chunkPos);
-                        $nextR = $chunk === false ? false : strpos($chunk, "\r", $chunkPos);
-                        $nextE = $chunk === false ? false : strpos($chunk, $enclosure, $chunkPos);
-
-                        // Find the earliest event
-                        $targets = [];
-                        if ($nextN !== false) {
-                            $targets[] = ['type' => 'newline', 'pos' => $nextN, 'len' => 1];
-                        }
-                        if ($nextR !== false) {
-                            $targets[] = ['type' => 'newline', 'pos' => $nextR, 'len' => ($nextR + 1 < $chunkLen && $chunk[$nextR + 1] === "\n") ? 2 : 1];
-                        }
-                        if ($nextE !== false) {
-                            $targets[] = ['type' => 'enclosure', 'pos' => $nextE, 'len' => 1];
-                        }
-
-                        if ($targets === []) {
-                            // No events in the rest of this chunk
-                            if ($chunk !== false) {
-                                $currentRecordBuffer .= substr($chunk, $chunkPos);
-                            }
-                            $globalOffset += ($chunkLen - $chunkPos);
-                            $chunkPos = $chunkLen;
-
-                            if (feof($handle) && $currentRecordBuffer !== '') {
-                                // Implicit row at EOF
-                                $this->fastProcessRow(
-                                    $currentRecordBuffer,
-                                    $rowNum,
-                                    $headerRow,
-                                    $skipsEmpty,
-                                    $delimiter,
-                                    $enclosure,
-                                    $escape,
-                                    $currentLineStart,
-                                    $headerKeys,
-                                    $dataCount,
-                                    $segmentStarts,
-                                    $segmentRowNumbers
-                                );
-                                $currentRecordBuffer = '';
-                            }
-                        } else {
-                            // Sort targets by position
-                            usort($targets, fn ($a, $b) => $a['pos'] <=> $b['pos']);
-                            $event = $targets[0];
-
-                            if ($chunk !== false) {
-                                $piece = substr($chunk, $chunkPos, $event['pos'] - $chunkPos);
-                                $currentRecordBuffer .= $piece;
-                            }
-
-                            if ($event['type'] === 'newline') {
-                                // Complete row!
-                                $this->fastProcessRow(
-                                    $currentRecordBuffer,
-                                    $rowNum,
-                                    $headerRow,
-                                    $skipsEmpty,
-                                    $delimiter,
-                                    $enclosure,
-                                    $escape,
-                                    $currentLineStart,
-                                    $headerKeys,
-                                    $dataCount,
-                                    $segmentStarts,
-                                    $segmentRowNumbers
-                                );
-
-                                $rowNum++;
-                                $globalOffset += ($event['pos'] - $chunkPos + $event['len']);
-                                $currentLineStart = $globalOffset;
-                                $chunkPos = $event['pos'] + $event['len'];
-                                $currentRecordBuffer = '';
-                            } else {
-                                // Enclosure found, toggle state
-                                $inside = true;
-                                $globalOffset += ($event['pos'] - $chunkPos + 1);
-                                $chunkPos = $event['pos'] + 1;
-                            }
-                        }
-                    } else {
-                        // While inside quotes, only look for the next enclosure
-                        $nextE = $chunk === false ? false : strpos($chunk, $enclosure, $chunkPos);
-
-                        if ($nextE === false) {
-                            if ($chunk !== false) {
-                                $currentRecordBuffer .= substr($chunk, $chunkPos);
-                            }
-                            $globalOffset += ($chunkLen - $chunkPos);
-                            $chunkPos = $chunkLen;
-                        } else {
-                            if ($chunk !== false) {
-                                $piece = substr($chunk, $chunkPos, $nextE - $chunkPos + 1);
-                                $currentRecordBuffer .= $piece;
-                            }
-                            $inside = false;
-                            $globalOffset += ($nextE - $chunkPos + 1);
-                            $chunkPos = $nextE + 1;
-                        }
+                while (($eolPos = strpos($chunk, $eol, $pos)) !== false) {
+                    // Record a segment start at every chunkSize boundary
+                    if ($dataCount % $this->chunkSize === 0) {
+                        $segmentStarts[] = $globalOffset + $pos;
+                        $segmentRowNumbers[] = $rowNum;
                     }
+
+                    $dataCount++;
+                    $rowNum++;
+                    $pos = $eolPos + $eolLen;
                 }
+
+                $lastSegmentOffset = $globalOffset + $pos;
+                $partialRow = ($pos < $chunkLen); // bytes after the last newline
+                $globalOffset += $chunkLen;
+            }
+
+            // If the file doesn't end with a newline, count the dangling partial row
+            if ($partialRow) {
+                if ($dataCount % $this->chunkSize === 0) {
+                    $segmentStarts[] = $lastSegmentOffset;
+                    $segmentRowNumbers[] = $rowNum;
+                }
+                $dataCount++;
             }
 
             if ($dataCount === 0) {
                 return new ImportScan($headerKeys, [], 0);
             }
 
-            $segments = $this->buildCsvSegments($segmentStarts, $segmentRowNumbers);
-
-            return new ImportScan($headerKeys, $segments, $dataCount);
+            return new ImportScan($headerKeys, $this->buildCsvSegments($segmentStarts, $segmentRowNumbers), $dataCount);
         } finally {
             fclose($handle);
         }
+    }
+
+    private function detectEol(string $path): string
+    {
+        $handle = fopen($path, 'rb');
+        $chunk = fread($handle, 8192);
+        fclose($handle);
+
+        if ($chunk === false) {
+            return "\n";
+        }
+
+        if (str_contains($chunk, "\r\n")) {
+            return "\r\n";
+        }
+
+        if (str_contains($chunk, "\n")) {
+            return "\n";
+        }
+
+        if (str_contains($chunk, "\r")) {
+            return "\r";
+        }
+
+        return "\n";
     }
 
     private function fastProcessRow(
@@ -289,6 +271,7 @@ final class ImportScanner
         try {
             $sheetIndexTarget = $this->xlsxSheetIndex;
             $currentSheetIndex = 0;
+            $sheetFound = false;
 
             foreach ($openSpout->getSheetIterator() as $sheet) {
                 if ($sheetIndexTarget !== null) {
@@ -300,6 +283,8 @@ final class ImportScanner
                 } elseif ($currentSheetIndex > 0) {
                     break;
                 }
+
+                $sheetFound = true;
 
                 $rowIndex = 0;
 
@@ -330,6 +315,14 @@ final class ImportScanner
             }
         } finally {
             $openSpout->close();
+        }
+
+        if ($sheetIndexTarget !== null && ! $sheetFound) {
+            if (! $this->import instanceof SkipsUnknownSheets) {
+                throw UnknownSheetException::forIndex($sheetIndexTarget);
+            }
+
+            return new ImportScan($headerKeys, [], 0);
         }
 
         if ($dataCount === 0) {
@@ -377,6 +370,7 @@ final class ImportScanner
             try {
                 $sheetIndexTarget = $this->xlsxSheetIndex;
                 $currentSheetIndex = 0;
+                $sheetFound = false;
 
                 foreach ($openSpout->getSheetIterator() as $sheet) {
                     if ($sheetIndexTarget !== null) {
@@ -388,6 +382,8 @@ final class ImportScanner
                     } elseif ($currentSheetIndex > 0) {
                         break;
                     }
+
+                    $sheetFound = true;
 
                     $rowIndex = 0;
                     foreach ($sheet->getRowIterator() as $row) {
@@ -404,6 +400,14 @@ final class ImportScanner
                 }
             } finally {
                 $openSpout->close();
+            }
+
+            if ($sheetIndexTarget !== null && ! $sheetFound) {
+                if (! $this->import instanceof SkipsUnknownSheets) {
+                    throw UnknownSheetException::forIndex($sheetIndexTarget);
+                }
+
+                return new ImportScan($headerKeys, [], 0);
             }
         }
 

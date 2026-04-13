@@ -7,6 +7,7 @@ namespace TurboExcel\Import\Readers;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Reader\XLSX\Reader;
+use TurboExcel\Exceptions\UnknownSheetException;
 use TurboExcel\Import\Segments\XlsxReadSegment;
 
 /**
@@ -28,6 +29,7 @@ final class XlsxReader
         $currentSheetIndex = 0;
 
         try {
+            $sheetFound = false;
             foreach ($reader->getSheetIterator() as $sheet) {
                 if ($currentSheetIndex !== $targetSheetIndex) {
                     $currentSheetIndex++;
@@ -35,6 +37,7 @@ final class XlsxReader
                     continue;
                 }
 
+                $sheetFound = true;
                 $rowIndex = 0;
 
                 foreach ($sheet->getRowIterator() as $row) {
@@ -56,6 +59,10 @@ final class XlsxReader
                 }
 
                 break;
+            }
+
+            if (! $sheetFound) {
+                throw UnknownSheetException::forIndex($targetSheetIndex);
             }
         } finally {
             $reader->close();
