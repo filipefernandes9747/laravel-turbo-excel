@@ -259,7 +259,14 @@ final class Importer
         Cache::put("turbo_excel_import:{$aggregateKey}:processed", 0, 3600);
         Cache::put("turbo_excel_import:{$aggregateKey}:failed", 0, 3600);
 
-        return Bus::batch($jobs)->name('turbo-excel-import')->dispatch();
+        $batch = Bus::batch($jobs)->name('turbo-excel-import');
+
+        $queue = property_exists($import, 'queue') ? $import->queue : (method_exists($import, 'queue') ? $import->queue() : null);
+        if ($queue) {
+            $batch->onQueue($queue);
+        }
+
+        return $batch->dispatch();
     }
 
     /**
@@ -283,7 +290,14 @@ final class Importer
             $jobs[] = new ProcessChunkJob($import, $path, $format, $segment, $headerKeys, $aggregateKey, $totalRows, $disk);
         }
 
-        return Bus::batch($jobs)->name('turbo-excel-import')->dispatch();
+        $batch = Bus::batch($jobs)->name('turbo-excel-import');
+
+        $queue = property_exists($import, 'queue') ? $import->queue : (method_exists($import, 'queue') ? $import->queue() : null);
+        if ($queue) {
+            $batch->onQueue($queue);
+        }
+
+        return $batch->dispatch();
     }
 
     private function assertMultiSheetCoordinator(object $import): void
