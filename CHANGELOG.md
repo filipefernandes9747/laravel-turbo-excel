@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0](https://github.com/filipefernandes9747/laravel-turbo-excel/releases/tag/v1.2.0) (2026-04-14)
 ## [1.1.1](https://github.com/filipefernandes9747/laravel-turbo-excel/releases/tag/v1.1.1) (2026-04-14)
 ## [1.1.0](https://github.com/filipefernandes9747/laravel-turbo-excel/releases/tag/v1.1.0) (2026-04-13)
 ## [1.0.7](https://github.com/filipefernandes9747/laravel-turbo-excel/releases/tag/v1.0.7) (2026-04-13)
