@@ -16,13 +16,17 @@ use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithChunkSize;
 use TurboExcel\Concerns\WithColumnFormatting;
 use TurboExcel\Concerns\WithDebug;
+use TurboExcel\Concerns\WithErrorHandling;
 use TurboExcel\Concerns\WithEvents;
 use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithLimit;
 use TurboExcel\Concerns\WithMapping;
 use TurboExcel\Concerns\WithMultipleSheets;
 use TurboExcel\Concerns\WithQuerySplitBySheet;
+use TurboExcel\Concerns\WithStrictNullComparison;
 use TurboExcel\Concerns\WithStyles;
 use TurboExcel\Concerns\WithTitle;
+use TurboExcel\Concerns\WithTranslation;
 use TurboExcel\Enums\Format;
 use TurboExcel\Events\AfterExport;
 use TurboExcel\Events\BeforeExport;
@@ -76,20 +80,30 @@ final class Exporter
             ]);
         }
 
-        $writer = $this->resolveWriter();
-        $writer->applyOptions($this->export);
-        $writer->open($path);
+        try {
+            $writer = $this->resolveWriter();
+            $writer->applyOptions($this->export);
+            $writer->open($path);
 
-        $totalRows = 0;
-        if ($this->export instanceof WithQuerySplitBySheet) {
-            $totalRows = $this->writeSplitSheet($this->export, $writer, $isDebug);
-        } elseif ($this->export instanceof WithMultipleSheets) {
-            $totalRows = $this->writeMultipleSheets($this->export->sheets(), $writer, $isDebug);
-        } else {
-            $totalRows = $this->writeSheet($this->export, $writer, true, $isDebug);
+            $totalRows = 0;
+            if ($this->export instanceof WithQuerySplitBySheet) {
+                $totalRows = $this->writeSplitSheet($this->export, $writer, $isDebug);
+            } elseif ($this->export instanceof WithMultipleSheets) {
+                $totalRows = $this->writeMultipleSheets($this->export->sheets(), $writer, $isDebug);
+            } else {
+                $totalRows = $this->writeSheet($this->export, $writer, true, $isDebug);
+            }
+
+            $writer->close();
+        } catch (\Throwable $e) {
+            if ($this->export instanceof WithErrorHandling) {
+                $this->export->handleError($e);
+
+                return;
+            }
+
+            throw $e;
         }
-
-        $writer->close();
 
         if ($isDebug) {
             Log::info('TurboExcel: Export completed', [
@@ -105,6 +119,7 @@ final class Exporter
             }
         }
     }
+
 
     // ---------------------------------------------------------------------------
     // Sheet writing
@@ -144,6 +159,7 @@ final class Exporter
 
         $chunkSize = $export instanceof WithChunkSize ? $export->chunkSize() : 1000;
         $splitCol = $export->splitByColumn();
+        $limit = $export instanceof WithLimit ? $export->limit() : null;
 
         // The active handler for the current sheet segment.
         $handler = $export;
@@ -153,7 +169,11 @@ final class Exporter
         $anonymizeReplacement = '';
 
         foreach ($this->resolveRows($export, $chunkSize) as $rawRow) {
-            $item = $this->normaliseRow($rawRow);
+            if ($limit !== null && $rowsWritten >= $limit) {
+                break;
+            }
+
+            $item = $this->normaliseRow($rawRow, $handler);
             $splitValue = $item[$splitCol] ?? null;
 
             if ($isFirstSheet || $splitValue !== $currentSplitValue) {
@@ -200,6 +220,10 @@ final class Exporter
                     ? $handler->headings()
                     : array_keys($row);
 
+                if ($handler instanceof WithTranslation) {
+                    $headings = array_map(fn ($h) => trans($h), $headings);
+                }
+
                 $writer->writeRow(Row::fromValues($headings, $headerStyle));
                 $headingsWritten = true;
             }
@@ -211,6 +235,7 @@ final class Exporter
                 ($this->onProgress)();
             }
         }
+
 
         // If no rows were written at all, ensure at least one sheet exists
         // (renaming the default one) and write headings if available.
@@ -254,6 +279,8 @@ final class Exporter
         $anonymizeColumns = $shouldAnonymize ? $export->anonymizeColumns() : [];
         $anonymizeReplacement = $export instanceof WithAnonymization ? $export->anonymizeReplacement() : '';
 
+        $limit = $export instanceof WithLimit ? $export->limit() : null;
+
         // --- Stream rows ---
         $headingsWritten = false;
         $rowsWritten = 0;
@@ -261,14 +288,22 @@ final class Exporter
         // If headings are explicitly provided, write them now so empty exports
         // still produce a valid Excel file with at least a header row.
         if ($export instanceof WithHeadings) {
-            $writer->writeRow(Row::fromValues($export->headings(), $headerStyle));
+            $headings = $export->headings();
+            if ($export instanceof WithTranslation) {
+                $headings = array_map(fn ($h) => trans($h), $headings);
+            }
+            $writer->writeRow(Row::fromValues($headings, $headerStyle));
             $headingsWritten = true;
         }
 
         foreach ($this->resolveRows($export, $chunkSize) as $rawRow) {
+            if ($limit !== null && $rowsWritten >= $limit) {
+                break;
+            }
+
             $row = $export instanceof WithMapping
                 ? $export->map($rawRow)
-                : $this->normaliseRow($rawRow);
+                : $this->normaliseRow($rawRow, $export);
 
             if ($anonymizeColumns) {
                 foreach ($anonymizeColumns as $col) {
@@ -284,6 +319,10 @@ final class Exporter
                 $headings = $export instanceof WithHeadings
                     ? $export->headings()
                     : array_keys($row);
+
+                if ($export instanceof WithTranslation) {
+                    $headings = array_map(fn ($h) => trans($h), $headings);
+                }
 
                 $writer->writeRow(Row::fromValues($headings, $headerStyle));
                 $headingsWritten = true;
@@ -310,6 +349,7 @@ final class Exporter
 
         return $rowsWritten;
     }
+
 
     // ---------------------------------------------------------------------------
     // Data-source resolution
@@ -348,16 +388,25 @@ final class Exporter
      *
      * @return array<string, mixed>
      */
-    private function normaliseRow(mixed $item): array
+    private function normaliseRow(mixed $item, ?object $export = null): array
     {
-        return match (true) {
+        $data = match (true) {
             $item instanceof Model => $item->toArray(),
             $item instanceof \JsonSerializable => (array) $item->jsonSerialize(),
             is_array($item) => $item,
             is_object($item) => (array) $item,
             default => [$item],
         };
+
+        if ($export instanceof WithStrictNullComparison) {
+            // Strict null usually means "don't convert null to empty string".
+            // OpenSpout handles null correctly if we pass it correctly.
+            // We just ensure we return the data without any loose conversions.
+        }
+
+        return $data;
     }
+
 
     // ---------------------------------------------------------------------------
     // Formatting & Styling resolution

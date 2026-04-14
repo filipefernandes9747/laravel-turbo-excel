@@ -9,12 +9,61 @@ use TurboExcel\Concerns\FromArray;
 use TurboExcel\Concerns\WithColumnFormatting;
 use TurboExcel\Concerns\WithCsvOptions;
 use TurboExcel\Concerns\WithDebug;
+use TurboExcel\Concerns\WithColumnWidths;
 use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithProperties;
 use TurboExcel\Concerns\WithStyles;
+use TurboExcel\Concerns\WithTitle;
+use TurboExcel\Concerns\WithTranslation;
 use TurboExcel\Enums\Format;
 use TurboExcel\Facades\TurboExcel;
 
 describe('Export Options', function (): void {
+    it('applies document properties correctly', function (): void {
+        $export = new class implements FromArray, WithProperties
+        {
+            public function array(): array { return [['a' => 1]]; }
+            public function properties(): array {
+                return ['title' => 'Test Title', 'creator' => 'Tester'];
+            }
+        };
+
+        $path = tmpPath('props.xlsx');
+        TurboExcel::export($export, $path, Format::XLSX);
+
+        expect(File::exists($path))->toBeTrue();
+    });
+
+    it('applies manual column widths', function (): void {
+        $export = new class implements FromArray, WithColumnWidths
+        {
+            public function array(): array { return [['a' => 1]]; }
+            public function columnWidths(): array {
+                return ['A' => 50, 1 => 20];
+            }
+        };
+
+        $path = tmpPath('widths.xlsx');
+        TurboExcel::export($export, $path, Format::XLSX);
+
+        expect(File::exists($path))->toBeTrue();
+    });
+
+    it('translates headings when WithTranslation is used', function (): void {
+        app('translator')->addLines(['export.id' => 'Identifier'], 'en');
+
+        $export = new class implements FromArray, WithHeadings, WithTranslation
+        {
+            public function array(): array { return [['id' => 123]]; }
+            public function headings(): array { return ['export.id']; }
+        };
+
+        $path = tmpPath('trans.csv');
+        TurboExcel::export($export, $path, Format::CSV);
+
+        expect(File::get($path))->toContain('Identifier');
+    });
+
     it('applies csv options correctly', function (): void {
         $export = new class implements FromArray, WithCsvOptions
         {

@@ -14,10 +14,12 @@ use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\Exceptions\UnknownSheetException;
 use TurboExcel\Import\Concerns\OnEachChunk;
 use TurboExcel\Import\Concerns\OnEachRow;
+use TurboExcel\Import\Concerns\RemembersFullRow;
 use TurboExcel\Import\Concerns\RemembersRowNumber;
 use TurboExcel\Import\Concerns\SkipsEmptyRows;
 use TurboExcel\Import\Concerns\SkipsOnError;
 use TurboExcel\Import\Concerns\SkipsOnFailure;
+use TurboExcel\Import\Concerns\SkipsOnValidation;
 use TurboExcel\Import\Concerns\SkipsUnknownSheets;
 use TurboExcel\Import\Concerns\ToArray;
 use TurboExcel\Import\Concerns\ToCollection;
@@ -27,6 +29,7 @@ use TurboExcel\Import\Concerns\WithLimit;
 use TurboExcel\Import\Concerns\WithMetrics;
 use TurboExcel\Import\Concerns\WithProgress;
 use TurboExcel\Import\Concerns\WithProgressBar;
+use TurboExcel\Import\Concerns\WithRowFilter;
 use TurboExcel\Import\Concerns\WithStartRow;
 use TurboExcel\Import\Pipeline\HeaderProcessor;
 use TurboExcel\Import\Pipeline\ModelProcessor;
@@ -101,6 +104,14 @@ final class SegmentImporter
                     $import->setRowNumber($rowIndex);
                 }
 
+                if ($import instanceof RemembersFullRow) {
+                    $import->setFullRow($cells);
+                }
+
+                if ($import instanceof WithRowFilter && ! $import->filterRow($cells)) {
+                    continue;
+                }
+
                 if ($import instanceof SkipsEmptyRows && $this->isEmptyRow($cells)) {
                     continue;
                 }
@@ -159,6 +170,21 @@ final class SegmentImporter
                             memory_get_peak_usage(true) / 1024 / 1024
                         ));
                     }
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    if ($import instanceof SkipsOnValidation) {
+                        $import->onValidationFailed($e);
+                        $failed++;
+                    } elseif ($import instanceof SkipsOnFailure) {
+                        $import->onFailure($rowForPipeline ?? $cells, $e);
+                        $failed++;
+                    } elseif ($import instanceof SkipsOnError) {
+                        $import->onError($e);
+                        $failed++;
+                    } else {
+                        $models->flush();
+
+                        throw $e;
+                    }
                 } catch (\Throwable $e) {
                     if ($import instanceof SkipsOnFailure) {
                         $import->onFailure($rowForPipeline ?? $cells, $e);
@@ -168,11 +194,13 @@ final class SegmentImporter
                         $failed++;
                     } else {
                         $models->flush();
+
                         throw $e;
                     }
                 }
             }
-        } catch (UnknownSheetException $e) {
+        }
+ catch (UnknownSheetException $e) {
             if (! $import instanceof SkipsUnknownSheets) {
                 throw $e;
             }

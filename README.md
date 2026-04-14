@@ -1,8 +1,8 @@
 # Laravel Turbo Excel
 
 [![Tests](https://github.com/filipefernandes/laravel-turbo-excel/actions/workflows/tests.yml/badge.svg)](https://github.com/filipefernandes/laravel-turbo-excel/actions)
-[![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://php.net)
-[![Laravel](https://img.shields.io/badge/Laravel-10--12-red)](https://laravel.com)
+[![PHP](https://img.shields.io/badge/PHP-8.4%2B-blue)](https://php.net)
+[![Laravel](https://img.shields.io/badge/Laravel-12.0-red)](https://laravel.com)
 
 Memory-efficient Excel and CSV **exports and imports** for Laravel, powered by [openspout/openspout](https://github.com/openspout/openspout).
 
@@ -114,12 +114,20 @@ return (new UsersExport())->download('users.xlsx');
 
 Implement **one** of the following to tell Turbo-Excel where your data comes from.
 
-| Concern          | Method                     | Best for                                            |
-| ---------------- | -------------------------- | --------------------------------------------------- |
 | `FromQuery`      | `query(): Builder`         | Large datasets — streamed via `lazy()`, flat memory |
 | `FromCollection` | `collection(): Collection` | Small, pre-loaded Illuminate Collections            |
 | `FromArray`      | `array(): array`           | Plain PHP arrays                                    |
 | `FromGenerator`  | `generator(): \Generator`  | Custom lazy sources, external API pages             |
+
+### `WithLimit`
+Cap the number of rows exported (useful for "Top 10" reports or sample files):
+```php
+class TopUsersExport implements FromQuery, WithLimit
+{
+    public function limit(): int { return 100; }
+}
+```
+
 
 ---
 
@@ -223,6 +231,46 @@ class StyledExport implements FromArray, WithStyles
 }
 ```
 
+### `WithColumnWidths` (XLSX only) 📏
+
+Set manual column widths to ensure data readability:
+
+```php
+use TurboExcel\Concerns\WithColumnWidths;
+
+class WideExport implements FromArray, WithColumnWidths
+{
+    public function columnWidths(): array
+    {
+        return [
+            'A' => 15,
+            'B' => 45, // Perfect for email addresses
+        ];
+    }
+}
+```
+
+### `WithProperties` (XLSX only) 📄
+
+Set professional document metadata:
+
+```php
+use TurboExcel\Concerns\WithProperties;
+
+class ProfessionalExport implements FromArray, WithProperties
+{
+    public function properties(): array
+    {
+        return [
+            'title'   => 'Financial Report',
+            'creator' => 'Acme Corp ERP',
+            'subject' => 'Quarterly Analysis',
+        ];
+    }
+}
+```
+
+
 ### `WithCsvOptions` (CSV only)
 
 Customize delimiter, enclosure, and Unicode BOM settings for CSV files:
@@ -240,30 +288,59 @@ class CustomCsvExport implements FromQuery, WithCsvOptions
 }
 ```
 
+### `WithStrictNullComparison` 🎯
+
+Ensures `null` values are explicitly handled without loose type conversion to empty strings.
+
+---
+
+## Utility Concerns
+
+### `WithTranslation` 🌍
+
+Automatically localize your headings (Export) or header keys (Import) via Laravel's `trans()` helper:
+
+```php
+class LocalizedExport implements WithHeadings, WithTranslation
+{
+    public function headings(): array { return ['users.id', 'users.name']; }
+}
+```
+
+### `WithErrorHandling` 🚦
+
+Unified error handling for both sides of the pipeline:
+
+```php
+class RobustProcess implements WithErrorHandling
+{
+    public function handleError(\Throwable $e): void
+    {
+        \Log::error($e->getMessage());
+    }
+}
+```
+
 ### `WithAnonymization` 🛡️
 
-Declaratively mask sensitive data (PII/GDPR) across your export without cluttering your mapping logic. It uses a high-performance in-place replacement loop.
+Declaratively mask sensitive data (PII/GDPR) across your **exports and imports** without cluttering your mapping logic. It uses a high-performance in-place replacement loop.
 
 ```php
 use TurboExcel\Concerns\WithAnonymization;
 
-class UsersExport implements FromQuery, WithAnonymization
+class UsersProcess implements WithAnonymization
 {
-    public function query() { ... }
-
-    // Optional: Determine if anonymization should run (defaults to true)
+    // Optional: Determine if anonymization should run
     public function isAnonymizationEnabled(): bool
     {
-        return $this->user->isAdmin() === false;
+        return app()->environment('production');
     }
 
-    // Column keys to mask (mapped or raw keys)
     public function anonymizeColumns(): array
     {
         return ['email', 'phone_number', 'address'];
     }
 
-    // Replacement string (default is empty string)
     public function anonymizeReplacement(): string
     {
         return '[HIDDEN]';
@@ -272,6 +349,7 @@ class UsersExport implements FromQuery, WithAnonymization
 ```
 
 ---
+
 
 ## Multi-Sheet Exports (XLSX only)
 
@@ -434,28 +512,27 @@ The file format is inferred from the extension (`.csv` / `.xlsx`). Pass an expli
 | Concern                 | Role |
 | ----------------------- | ---- |
 | `ToModel`               | `model(array $row): ?Model` — return `null` to skip persisting that row |
-| `ToCollection`        | Marker: each successful row (after map + validate) is pushed onto `$result->rows`. Use instead of `ToModel` when you want an in-memory collection, or combine with `ToModel` to persist and collect. **Not compatible with `ShouldQueue`.** |
-| `OnEachRow`             | `onRow(array $row): void` — process each row instantly via callback after it is mapped and validated |
-| `OnEachChunk`           | `onChunk(Collection $chunk): void` — process parsed rows in raw chunks. Combined with `WithChunkReading` to configure chunk size |
-| `WithMapping`           | `map(array $row): array` — transform the row before validation / `model()` |
-| `WithValidation`        | `rules(): array` — Laravel validator rules (keys match your mapped row) |
-| `WithHeaderRow`         | `headerRow(): int` — 1-based row index of the header (first row after a UTF-8 BOM is row `1`) |
-| `WithNormalizedHeaders` | `headerNormalization()` returns **either** an associative map (`'Header In File' => 'attr_key'`, trimmed text as keys; unmapped headers keep the trimmed string) **or** a callable `fn (string $header): string`; duplicate keys (`name`, `name_1`, …) and empty headers (`column_1`, …) are still applied afterward |
-| `WithHeaderValidation`  | `headers(): array` — validate the header row (keys are **normalized** header names) |
-| `WithChunkReading`      | `chunkSize(): int` — used together with queued imports to split work |
-| `ShouldQueue`           | Marker: run the import via the queue (see below). **Not** Laravel’s `Illuminate\Contracts\Queue\ShouldQueue` — alias this interface in your import class if you also implement queued jobs |
-| `SkipsOnFailure`        | `onFailure(array $row, \Throwable $e): void` — record failures instead of stopping the import |
-| `LogsFailuresToCsv`     | Trait: implement `SkipsOnFailure` on your class and `use LogsFailuresToCsv;` to automatically dump failed rows + error messages into a local CSV file |
-| `SkipsEmptyRows`        | Marker: automatically skips and ignores completely empty/blank rows before mapping and validation |
-| `WithBatchInserts`      | `batchSize(): int` — buffer rows and `insert` in batches (no per-row `save()`; events/casts limitations apply as with raw `insert`) |
-| `WithUpserts`           | `uniqueBy(): array\|string` — combined with `WithBatchInserts`, switches batch inserts into bulk `upsert()` queries based on this unique key |
-| `WithUpsertColumns`     | `upsertColumns(): ?array` — used with `WithUpserts` to explicitly declare which columns should be updated when an upsert collision occurs |
-| `WithStartRow`          | `startRow(): int` — start reading data from this spreadsheet row (default is `1`) |
-| `WithLimit`             | `limit(): int` — stop reading after this many rows have been processed |
-| `WithMetrics`           | Marker (or call `->withMetrics()`): logs performance data (memory, timing, row counts) to your Laravel log |
-| `Importable`            | Trait: adds `import()`, `queue()`, and `withMetrics()` methods for a fluent API |
-| `RemembersRowNumber`    | Trait + Interface: automatically tracks the physical row index. Ensure your class implements `TurboExcel\Import\Concerns\RemembersRowNumber` and uses the trait |
-| `WithMultipleSheets`   | **XLSX only.** `sheets(): array` returns a **list** of import objects, one per worksheet in **workbook order** (index `0` = first sheet). Put `ToModel`, `ToCollection`, headers, mapping, validation, and optional `WithChunkReading` on **each** sheet import — the coordinator should normally implement only `WithMultipleSheets` (and optionally `ShouldQueue`). Not valid for CSV. |
+| `ToCollection`        | Marker: each successful row is pushed onto `$result->rows`. **Not compatible with `ShouldQueue`.** |
+| `ToArray`               | Marker: similar to `ToCollection` but returns a plain PHP array. |
+| `OnEachRow`             | `onRow(array $row): void` — process each row instantly via callback |
+| `OnEachChunk`           | `onChunk(Collection $chunk): void` — process parsed rows in raw chunks |
+| `WithMapping`           | `map(array $row): array` — transform the row before validation / persistence |
+| `WithValidation`        | `rules(): array` — Laravel validator rules |
+| `SkipsOnValidation`     | `onValidationFailed(ValidationException $e)` — Gracefully handle bad data |
+| `WithHeaderRow`         | `headerRow(): int` — 1-based row index of the header |
+| `WithNormalizedHeaders` | `headerNormalization()` — transform header text into array keys |
+| `WithRowFilter`         | `filterRow(array $row): bool` — Skip rows before mapping/validation |
+| `WithChunkReading`      | `chunkSize(): int` — configure scan chunks for queues |
+| `ShouldQueue`           | Marker: run the import via the queue |
+| `SkipsOnFailure`        | `onFailure(array $row, \Throwable $e): void` — record failures and continue |
+| `WithBatchSize`         | `batchSize(): int` — Enhanced alias for `WithBatchInserts` |
+| `WithInsertStrategy`    | `insertStrategy(): InsertStrategy` — Choose `INSERT`, `UPDATE`, or `UPSERT` |
+| `WithMetrics`           | Marker: logs memory and timing to your Laravel log |
+| `Importable`            | Trait: adds fluent methods like `import()` and `queue()` |
+| `RemembersFullRow`      | `setFullRow(array $row)` — access raw, unmapped input data |
+| `RemembersRowNumber`    | tracks the physical row index |
+| `WithMultipleSheets`   | **XLSX only.** Process multiple worksheets in one workbook |
+
 
 Pipeline order per row: optional header → associative combine → **map** → **validate** → **model** / batch insert, and **append to `$result->rows`** when `ToCollection` is implemented.
 

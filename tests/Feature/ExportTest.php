@@ -11,12 +11,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use TurboExcel\Concerns\FromArray;
 use TurboExcel\Concerns\FromCollection;
 use TurboExcel\Concerns\FromGenerator;
+use TurboExcel\Concerns\FromQuery;
 use TurboExcel\Concerns\WithAnonymization;
 use TurboExcel\Concerns\WithChunkSize;
+use TurboExcel\Concerns\WithErrorHandling;
+use TurboExcel\Concerns\WithEvents;
 use TurboExcel\Concerns\WithHeadings;
+use TurboExcel\Concerns\WithLimit;
 use TurboExcel\Concerns\WithMapping;
 use TurboExcel\Concerns\WithMultipleSheets;
+use TurboExcel\Concerns\WithQuerySplitBySheet;
+use TurboExcel\Concerns\WithStrictNullComparison;
+use TurboExcel\Concerns\WithStyles;
 use TurboExcel\Concerns\WithTitle;
+use TurboExcel\Concerns\WithTranslation;
 use TurboExcel\Enums\Format;
 use TurboExcel\Exceptions\TurboExcelException;
 use TurboExcel\TurboExcel;
@@ -661,3 +669,61 @@ describe('Concern: WithAnonymization', function (): void {
         unlink($path);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Advanced Concerns
+// ---------------------------------------------------------------------------
+
+describe('Advanced Concerns', function (): void {
+    it('respects WithLimit on export', function (): void {
+        $export = new class implements FromArray, WithLimit
+        {
+            public function array(): array
+            {
+                return [['row1'], ['row2'], ['row3']];
+            }
+
+            public function limit(): int
+            {
+                return 2;
+            }
+        };
+
+        $path = tmpPath('limit.csv');
+        \TurboExcel\Facades\TurboExcel::export($export, $path, Format::CSV);
+
+        $rows = readCsv($path);
+        expect($rows)->toHaveCount(3);
+
+        unlink($path);
+    });
+
+    it('handles WithStrictNullComparison', function (): void {
+        $export = new class implements FromArray, WithStrictNullComparison {
+            public function array(): array {
+                return [['v1' => 'val', 'v2' => null]];
+            }
+        };
+
+        $path = tmpPath('strict.xlsx');
+        \TurboExcel\Facades\TurboExcel::export($export, $path);
+        expect(file_exists($path))->toBeTrue();
+        unlink($path);
+    });
+
+    it('delegates to WithErrorHandling when a throwable occurs', function (): void {
+        $export = new class implements FromArray, WithErrorHandling {
+            public bool $handled = false;
+            public function array(): array {
+                throw new \Exception('Trigger error');
+            }
+            public function handleError(\Throwable $e): void {
+                $this->handled = true;
+            }
+        };
+
+        \TurboExcel\Facades\TurboExcel::export($export, tmpPath('error.xlsx'));
+        expect($export->handled)->toBeTrue();
+    });
+});
+
